@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>Agent Hub</title>
+<style>
+  :root{--bg:#0d1420;--panel:#131c2b;--border:#1e3a55;--fg:#d7e3f0;--dim:#7a8ba0;
+        --acc:#48d7c4;--ok:#3ecf6a;--bad:#e05561;--warn:#e0a94d}
+  *{box-sizing:border-box;margin:0}
+  body{background:var(--bg);color:var(--fg);font:14px/1.5 "Segoe UI",system-ui,sans-serif;padding:16px;user-select:none}
+  h1{font-size:15px;color:var(--acc);letter-spacing:1px;margin-bottom:14px}
+  .group{margin-bottom:18px}
+  .group>.gname{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:2px;
+        border-bottom:1px solid var(--border);padding-bottom:5px;margin-bottom:8px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:10px;
+        padding:12px 14px;margin:8px 0;display:flex;align-items:center;gap:12px}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--dim);flex:none;transition:background .3s}
+  .dot.up{background:var(--ok);box-shadow:0 0 6px var(--ok)}
+  .dot.pending{background:var(--warn)}
+  .meta{flex:1;min-width:0}
+  .meta .nm{font-weight:600;cursor:pointer}
+  .meta .nm:hover{color:var(--acc)}
+  .meta .ds{font-size:12px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  button{background:none;border:1px solid var(--border);color:var(--fg);border-radius:8px;
+        padding:6px 14px;cursor:pointer;font:13px "Segoe UI";flex:none}
+  button:hover{border-color:var(--acc);color:var(--acc)}
+  button:disabled{opacity:.4;cursor:default}
+  button.stop:hover{border-color:var(--bad);color:var(--bad)}
+  .todos{margin:14px 0 12px}
+  .todos .gname{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:2px;
+        border-bottom:1px solid var(--border);padding-bottom:5px;margin-bottom:8px}
+  .todo-add{background:var(--panel);border:1px solid var(--border);border-radius:10px;
+        padding:10px 12px;margin:8px 0;display:flex;align-items:center;gap:10px}
+  #todoInput{flex:1;min-width:0;background:#0b111b;border:1px solid var(--border);color:var(--fg);
+        border-radius:8px;padding:7px 10px;font:13px "Segoe UI";outline:none}
+  #todoInput:focus{border-color:var(--acc)}
+  #todoInput::placeholder{color:var(--dim)}
+  #todoList .empty{color:var(--dim);font-size:12px;padding:6px 2px}
+  .todo-text{flex:1;min-width:0;overflow-wrap:anywhere}
+  .todo.done .todo-text{color:var(--dim);text-decoration:line-through}
+  .todo input{width:16px;height:16px;accent-color:var(--acc);flex:none}
+  .todo .del{width:30px;height:30px;padding:0;font-size:18px;line-height:1}
+  .todo .del:hover{border-color:var(--bad);color:var(--bad)}
+  #err{color:var(--bad);font-size:12px;white-space:pre-wrap}
+  .hint{font-size:11.5px;color:var(--dim);margin-top:10px}
+</style>
+</head>
+<body>
+<h1>AGENT HUB</h1>
+<div id="root">載入中…</div>
+<div id="todos" class="todos">
+  <div class="gname">待辦</div>
+  <div class="todo-add">
+    <input id="todoInput" type="text" placeholder="新增待辦" autocomplete="off">
+    <button id="todoAdd" type="button">新增</button>
+  </div>
+  <div id="todoList"></div>
+</div>
+<div id="err"></div>
+<div class="hint">點名稱開頁面．關閉視窗＝縮到系統匣（服務照跑）．真正退出用系統匣右鍵</div>
+<script>
+const invoke = window.__TAURI__.core.invoke;
+let cfg = null;
+let todos = [];
+const busy = new Set();   // 啟動/停止過渡中的服務 id
+const state = {};         // id -> bool（健康）
+
+function services(){ return cfg.groups.flatMap(g => g.services); }
+
+function render(){
+  const root = document.getElementById("root");
+  root.innerHTML = cfg.groups.map(g => `
+    <div class="group"><div class="gname">${g.name}</div>
+    ${g.services.map(s => {
+      const up = state[s.id], pending = busy.has(s.id);
+      return `<div class="card">
+        <div class="dot ${pending ? "pending" : up ? "up" : ""}"></div>
+        <div class="meta">
+          <div class="nm" data-open="${s.id}">${s.name}</div>
+          <div class="ds">${s.desc ?? ""}</div>
+        </div>
+        <button data-act="${s.id}" class="${up ? "stop" : ""}" ${pending ? "disabled" : ""}>
+          ${pending ? "…" : up ? "停止" : "啟動"}</button>
+      </div>`;
+    }).join("")}</div>`).join("");
+
+  root.querySelectorAll("[data-act]").forEach(b => b.onclick = () => toggle(b.dataset.act));
+  root.querySelectorAll("[data-open]").forEach(n => n.onclick = () => {
+    const s = services().find(x => x.id === n.dataset.open);
+    if (s.open) invoke("open_page", { id: "page-" + s.id, url: s.open, title: s.name });
+  });
+}
+
+function normalizeTodos(value){
+  return Array.isArray(value) ? value
+    .filter(t => t && typeof t.text === "string")
+    .map(t => ({ id: String(t.id ?? Date.now() + Math.random()), text: t.text, done: !!t.done }))
+    : [];
+}
+
+function renderTodos(){
+  const list = document.getElementById("todoList");
+  if (!todos.length) {
+    list.innerHTML = `<div class="empty">尚無待辦</div>`;
+    return;
+  }
+  list.innerHTML = todos.map(t => `
+    <div class="card todo ${t.done ? "done" : ""}" data-id="${t.id}">
+      <input type="checkbox" ${t.done ? "checked" : ""} aria-label="完成">
+      <div class="todo-text"></div>
+      <button class="del" type="button" aria-label="刪除">×</button>
+    </div>`).join("");
+  list.querySelectorAll(".todo").forEach(row => {
+    const item = todos.find(t => t.id === row.dataset.id);
+    row.querySelector(".todo-text").textContent = item.text;
+    row.querySelector("input").onchange = e => updateTodo(item.id, { done: e.target.checked });
+    row.querySelector(".del").onclick = () => deleteTodo(item.id);
+  });
+}
+
+async function persistTodos(){
+  await invoke("save_todos", { todos });
+}
+
+async function addTodo(){
+  const input = document.getElementById("todoInput");
+  const text = input.value.trim();
+  if (!text) return;
+  todos = [{ id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, text, done: false }, ...todos];
+  input.value = "";
+  renderTodos();
+  await persistTodos();
+  input.focus();
+}
+
+async function updateTodo(id, patch){
+  todos = todos.map(t => t.id === id ? { ...t, ...patch } : t);
+  renderTodos();
+  await persistTodos();
+}
+
+async function deleteTodo(id){
+  todos = todos.filter(t => t.id !== id);
+  renderTodos();
+  await persistTodos();
+}
+
+async function toggle(id){
+  const s = services().find(x => x.id === id);
+  const err = document.getElementById("err");
+  err.textContent = "";
+  busy.add(id); render();
+  try {
+    if (state[id]) {
+      await invoke("stop_service", { id, stop: s.stop });
+      await waitFor(s, false, 15);
+    } else {
+      await invoke("start_service", { id, command: s.start, cwd: s.cwd });
+      await waitFor(s, true, 90);   // npx 首跑可能要下載，給足時間
+    }
+  } catch (e) { err.textContent = `${s.name}: ${e}`; }
+  busy.delete(id);
+  await refresh();
+}
+
+async function waitFor(s, want, secs){
+  for (let i = 0; i < secs; i++) {
+    if (await invoke("probe", { url: s.healthUrl }) === want) return;
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  throw want ? "啟動了但健康檢查一直不過（看 healthUrl）" : "停止後端口仍有回應";
+}
+
+async function refresh(){
+  for (const s of services())
+    if (!busy.has(s.id)) state[s.id] = await invoke("probe", { url: s.healthUrl });
+  render();
+}
+
+(async () => {
+  try {
+    cfg = await invoke("load_config");
+    todos = normalizeTodos(await invoke("load_todos"));
+    renderTodos();
+    document.getElementById("todoAdd").onclick = addTodo;
+    document.getElementById("todoInput").onkeydown = e => {
+      if (e.key === "Enter") addTodo();
+    };
+    await refresh();
+    setInterval(refresh, 3000);
+  } catch (e) { document.getElementById("root").textContent = "設定載入失敗: " + e; }
+})();
+</script>
+</body>
+</html>

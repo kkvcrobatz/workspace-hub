@@ -1,0 +1,4 @@
+# 本專案釘 MSVC 工具鏈：預設的 gnu 工具鏈缺 MinGW（dlltool 不存在），
+# 而本機有 VS2022 Community 的 MSVC 工具組，msvc 是正路。
+[toolchain]
+channel = "stable-x86_64-pc-windows-msvc"

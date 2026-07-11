@@ -1,0 +1,30 @@
+{
+  "_readme": "Agent Hub 的服務清單（設定驅動：加服務＝加一段 JSON，不用重編譯）。分組顯示、開關獨立。stop.type: http=打 shutdown 端點優雅退；kill=按命令列 pattern 殺整棵程序樹。healthUrl 要用真實 API 路由——端口有回應≠服務健康（2026-07-06 教訓）。cwd 必填給會寫本地資料的服務——agentmemory 的庫在啟動 cwd 下的 ./data（split-brain 教訓）。",
+  "groups": [
+    {
+      "name": "agent-harness",
+      "services": [
+        {
+          "id": "console",
+          "name": "控制台",
+          "desc": "Sessions / Memory / Skills·MCP / Evals / 機制",
+          "start": "harness serve",
+          "cwd": "E:\\Kyle\\Workspace\\agent-harness",
+          "healthUrl": "http://127.0.0.1:4317/api/overview",
+          "open": "http://127.0.0.1:4317",
+          "stop": { "type": "http", "url": "http://127.0.0.1:4317/api/shutdown" }
+        },
+        {
+          "id": "agentmemory",
+          "name": "agentmemory（共用記憶）",
+          "desc": "3111 API＋3113 viewer；控制台啟動時也會自動拉起它",
+          "start": "npx -y @agentmemory/agentmemory",
+          "cwd": "E:\\Kyle\\Workspace\\agent-harness",
+          "healthUrl": "http://127.0.0.1:3111/agentmemory/memories?limit=1",
+          "open": "http://127.0.0.1:3113",
+          "stop": { "type": "kill", "pattern": "@agentmemory/agentmemory|@agentmemory\\\\agentmemory|iii\\.exe --config" }
+        }
+      ]
+    }
+  ]
+}
