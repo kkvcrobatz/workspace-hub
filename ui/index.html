@@ -17,6 +17,8 @@
   .dot{width:10px;height:10px;border-radius:50%;background:var(--dim);flex:none;transition:background .3s}
   .dot.up{background:var(--ok);box-shadow:0 0 6px var(--ok)}
   .dot.pending{background:var(--warn)}
+  .dot.bad{background:var(--bad);box-shadow:0 0 6px var(--bad)}
+  .meta .alert{font-size:12px;color:var(--bad);white-space:pre-wrap;margin-top:2px}
   .meta{flex:1;min-width:0}
   .meta .nm{font-weight:600;cursor:pointer}
   .meta .nm:hover{color:var(--acc)}
@@ -63,26 +65,43 @@ const invoke = window.__TAURI__.core.invoke;
 let cfg = null;
 let todos = [];
 const busy = new Set();   // 啟動/停止過渡中的服務 id
-const state = {};         // id -> bool（健康）
+const state = {};         // id -> bool（健康，一般服務用）
+const statusInfo = {};    // id -> {alert, lastRun}（kind:"status" 唯讀卡用）
 
 function services(){ return cfg.groups.flatMap(g => g.services); }
+
+function renderCard(s){
+  if (s.kind === "status") {
+    const info = statusInfo[s.id];
+    const bad = info && info.alert;
+    const dotCls = !info ? "" : bad ? "bad" : "up";
+    const lastRunTxt = info && info.lastRun ? `最近檢查：${info.lastRun}` : (info ? "尚無巡檢紀錄" : "讀取中…");
+    return `<div class="card">
+      <div class="dot ${dotCls}"></div>
+      <div class="meta">
+        <div class="nm">${s.name}</div>
+        <div class="ds">${s.desc ?? ""}．${lastRunTxt}</div>
+        ${bad ? `<div class="alert">${info.alert}</div>` : ""}
+      </div>
+    </div>`;
+  }
+  const up = state[s.id], pending = busy.has(s.id);
+  return `<div class="card">
+    <div class="dot ${pending ? "pending" : up ? "up" : ""}"></div>
+    <div class="meta">
+      <div class="nm" data-open="${s.id}">${s.name}</div>
+      <div class="ds">${s.desc ?? ""}</div>
+    </div>
+    <button data-act="${s.id}" class="${up ? "stop" : ""}" ${pending ? "disabled" : ""}>
+      ${pending ? "…" : up ? "停止" : "啟動"}</button>
+  </div>`;
+}
 
 function render(){
   const root = document.getElementById("root");
   root.innerHTML = cfg.groups.map(g => `
     <div class="group"><div class="gname">${g.name}</div>
-    ${g.services.map(s => {
-      const up = state[s.id], pending = busy.has(s.id);
-      return `<div class="card">
-        <div class="dot ${pending ? "pending" : up ? "up" : ""}"></div>
-        <div class="meta">
-          <div class="nm" data-open="${s.id}">${s.name}</div>
-          <div class="ds">${s.desc ?? ""}</div>
-        </div>
-        <button data-act="${s.id}" class="${up ? "stop" : ""}" ${pending ? "disabled" : ""}>
-          ${pending ? "…" : up ? "停止" : "啟動"}</button>
-      </div>`;
-    }).join("")}</div>`).join("");
+    ${g.services.map(renderCard).join("")}</div>`).join("");
 
   root.querySelectorAll("[data-act]").forEach(b => b.onclick = () => toggle(b.dataset.act));
   root.querySelectorAll("[data-open]").forEach(n => n.onclick = () => {
@@ -172,8 +191,16 @@ async function waitFor(s, want, secs){
 }
 
 async function refresh(){
-  for (const s of services())
-    if (!busy.has(s.id)) state[s.id] = await invoke("probe", { url: s.healthUrl });
+  for (const s of services()) {
+    if (s.kind === "status") {
+      statusInfo[s.id] = await invoke("watchdog_status", {
+        alertFile: s.statusFiles.alertFile,
+        logFile: s.statusFiles.logFile
+      });
+    } else if (!busy.has(s.id)) {
+      state[s.id] = await invoke("probe", { url: s.healthUrl });
+    }
+  }
   render();
 }
 

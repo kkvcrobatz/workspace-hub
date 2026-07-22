@@ -53,6 +53,31 @@ async fn probe(url: String) -> bool {
     http_request(&url, "GET").is_some()
 }
 
+/// 排程任務類背景程序的唯讀狀態（無 HTTP 端點可打）：alertFile 存在＝紅燈＋內容摘要；
+/// logFile 最後一行取時間戳當「最近檢查」。兩者都是純檔案讀取，讀不到就回「未知」而非報錯，
+/// 避免看門狗本身還沒跑過第一輪時，卡片直接顯示錯誤。
+#[tauri::command]
+async fn watchdog_status(alert_file: String, log_file: String) -> serde_json::Value {
+    let alert = std::fs::read_to_string(&alert_file)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let last_run = std::fs::read_to_string(&log_file)
+        .ok()
+        .and_then(|text| {
+            text.lines()
+                .rev()
+                .find(|l| l.trim_start().starts_with('['))
+                .map(|l| l.to_string())
+        })
+        .and_then(|line| {
+            line.strip_prefix('[')
+                .and_then(|rest| rest.split(']').next())
+                .map(|ts| ts.to_string())
+        });
+    serde_json::json!({ "alert": alert, "lastRun": last_run })
+}
+
 #[tauri::command]
 async fn start_service(state: State<'_, Spawned>, id: String, command: String, cwd: String) -> Result<u32, String> {
     let child = Command::new("cmd")
@@ -196,6 +221,7 @@ pub fn run() {
             load_todos,
             save_todos,
             probe,
+            watchdog_status,
             start_service,
             stop_service,
             open_page
