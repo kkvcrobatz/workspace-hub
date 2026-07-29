@@ -1,6 +1,7 @@
 // Agent Hub：本機服務啟動器（設定驅動，見 ../../services.json）
-// 職責邊界：hub 只管「啟動/停止/看狀態/開頁面」；結束 hub 不影響任何服務。
+// 職責邊界：hub 是 agent-harness 服務的總開關；關主視窗只縮到系統匣，退出才停止服務。
 use std::collections::HashMap;
+use std::fs;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::os::windows::process::CommandExt;
@@ -79,6 +80,17 @@ async fn watchdog_status(alert_file: String, log_file: String) -> serde_json::Va
 }
 
 #[tauri::command]
+async fn action_status(result_file: String) -> serde_json::Value {
+    match std::fs::read_to_string(&result_file)
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+    {
+        Some(value) => value,
+        None => serde_json::json!({ "status": "unknown", "message": "尚無執行紀錄" }),
+    }
+}
+
+#[tauri::command]
 async fn start_service(state: State<'_, Spawned>, id: String, command: String, cwd: String) -> Result<u32, String> {
     let child = Command::new("cmd")
         .args(["/c", &command])
@@ -93,21 +105,25 @@ async fn start_service(state: State<'_, Spawned>, id: String, command: String, c
 
 #[tauri::command]
 async fn stop_service(state: State<'_, Spawned>, id: String, stop: serde_json::Value) -> Result<String, String> {
+    stop_service_inner(&state, &id, &stop)
+}
+
+fn stop_service_inner(state: &Spawned, id: &str, stop: &serde_json::Value) -> Result<String, String> {
     match stop["type"].as_str() {
         Some("http") => {
             let url = stop["url"].as_str().ok_or("stop.url 缺失")?;
             http_request(url, "POST").ok_or_else(|| "shutdown 端點沒有回應".to_string())?;
-            state.0.lock().unwrap().remove(&id);
+            state.0.lock().unwrap().remove(id);
             Ok("已送出 shutdown".into())
         }
         Some("kill") => {
             // 優先殺自己 spawn 的整棵樹；外部啟動的按命令列 pattern 找（各自 /T 殺樹，
             // 因為 npx 會生 cmd→node→引擎 多層，殺單點會留孤兒續佔端口）
-            if let Some(pid) = state.0.lock().unwrap().remove(&id) {
+            if let Some(pid) = state.0.lock().unwrap().remove(id) {
                 let _ = taskkill_tree(pid);
             }
             if let Some(pattern) = stop["pattern"].as_str() {
-                kill_by_cmdline(pattern)?;
+                kill_by_cmdline(pattern, stop["processName"].as_str())?;
             }
             Ok("已終止".into())
         }
@@ -164,11 +180,24 @@ fn taskkill_tree(pid: u32) -> Option<()> {
         .map(|_| ())
 }
 
-fn kill_by_cmdline(pattern: &str) -> Result<(), String> {
+/// 按命令列 pattern 殺程序。
+///
+/// `process_name`（services.json 的 `stop.processName`）是 2026-07-30 補的安全閘：
+/// 原本只比對命令列，任何**提到**目標腳本檔名的程序都會被 `taskkill /T /F`——
+/// 實測會命中正在執行含該檔名指令的 bash shell、編輯器、其他 agent 的派工 prompt。
+/// 對完整命令列做 regex 本質上不可靠，因為別人的命令列可以包含你的 pattern 文字。
+/// 加上程序名約束後，只有真正是該執行檔的程序會被考慮，整類誤殺就消失了。
+/// 沒設 processName 時維持原行為（相容既有服務卡），但新服務都應該設。
+fn kill_by_cmdline(pattern: &str, process_name: Option<&str>) -> Result<(), String> {
+    let name_filter = match process_name {
+        Some(n) => format!(" -and $_.Name -eq '{}'", n.replace('\'', "''")),
+        None => String::new(),
+    };
     // PowerShell 找命令列符合 pattern 的程序，逐一殺樹；排除 hub 自己
     let script = format!(
-        "Get-CimInstance Win32_Process | Where-Object {{ $_.CommandLine -match '{}' -and $_.ProcessId -ne {} }} | ForEach-Object {{ taskkill /T /F /PID $_.ProcessId 2>$null }}",
+        "Get-CimInstance Win32_Process | Where-Object {{ $_.CommandLine -match '{}'{} -and $_.ProcessId -ne {} }} | ForEach-Object {{ taskkill /T /F /PID $_.ProcessId 2>$null }}",
         pattern.replace('\'', "''"),
+        name_filter,
         std::process::id()
     );
     Command::new("powershell")
@@ -177,6 +206,160 @@ fn kill_by_cmdline(pattern: &str) -> Result<(), String> {
         .output()
         .map_err(|e| format!("kill 失敗: {e}"))?;
     Ok(())
+}
+
+fn stop_all_services(app: &AppHandle) {
+    let path = std::env::var("HUB_SERVICES").unwrap_or_else(|_| SERVICES_PATH.to_string());
+    let Ok(text) = fs::read_to_string(&path) else { return; };
+    let Ok(cfg) = serde_json::from_str::<serde_json::Value>(&text) else { return; };
+    let state = app.state::<Spawned>();
+    if let Some(groups) = cfg["groups"].as_array() {
+        for group in groups {
+            if let Some(services) = group["services"].as_array() {
+                for service in services {
+                    if service["kind"].as_str() == Some("status") {
+                        continue;
+                    }
+                    let Some(id) = service["id"].as_str() else { continue; };
+                    if !service["stop"].is_object() {
+                        continue;
+                    }
+                    let _ = stop_service_inner(&state, id, &service["stop"]);
+                }
+            }
+        }
+    }
+}
+
+fn run_startup_actions() {
+    let path = std::env::var("HUB_SERVICES").unwrap_or_else(|_| SERVICES_PATH.to_string());
+    let Ok(text) = fs::read_to_string(&path) else { return; };
+    let Ok(cfg) = serde_json::from_str::<serde_json::Value>(&text) else { return; };
+    if let Some(groups) = cfg["groups"].as_array() {
+        for group in groups {
+            if let Some(services) = group["services"].as_array() {
+                for service in services {
+                    if let Some(action) = service["runOnHubStart"].as_object() {
+                        run_startup_action(service["id"].as_str().unwrap_or("startup-action"), action);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn run_startup_action(id: &str, action: &serde_json::Map<String, serde_json::Value>) {
+    let command = action.get("command").and_then(|v| v.as_str()).unwrap_or("");
+    let cwd = action.get("cwd").and_then(|v| v.as_str()).unwrap_or(r"E:\Kyle\Workspace\agent-harness");
+    let state_file = action.get("stateFile").and_then(|v| v.as_str()).unwrap_or("");
+    let result_file = action.get("resultFile").and_then(|v| v.as_str()).unwrap_or("");
+    if command.is_empty() || state_file.is_empty() || result_file.is_empty() {
+        return;
+    }
+    let today = local_date_string().unwrap_or_else(|| "unknown".to_string());
+    if action.get("oncePerDay").and_then(|v| v.as_bool()).unwrap_or(false)
+        && last_success_date(state_file).as_deref() == Some(today.as_str())
+    {
+        write_action_result(result_file, "success", "今日已成功掃描，略過重複執行", None);
+        return;
+    }
+    if let Some(url) = action.get("dependsOnHealthUrl").and_then(|v| v.as_str()) {
+        let wait_seconds = action.get("waitSeconds").and_then(|v| v.as_u64()).unwrap_or(90);
+        if !wait_for_health(url, wait_seconds) {
+            write_action_result(result_file, "failure", "agentmemory 3111 尚未通過健康檢查，未執行掃描", None);
+            return;
+        }
+    }
+    let output = Command::new("cmd")
+        .args(["/c", command])
+        .current_dir(cwd)
+        .creation_flags(CREATE_NO_WINDOW)
+        .output();
+    match output {
+        Ok(out) if out.status.success() => {
+            let details = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            let _ = write_state_success(state_file, &today);
+            write_action_result(result_file, "success", "掃描成功", Some(details));
+        }
+        Ok(out) => {
+            let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            let details = if stderr.is_empty() { stdout } else { stderr };
+            write_action_result(
+                result_file,
+                "failure",
+                &format!("{id} 退出碼 {}", out.status.code().unwrap_or(-1)),
+                Some(details),
+            );
+        }
+        Err(e) => {
+            write_action_result(result_file, "failure", &format!("啟動失敗: {e}"), None);
+        }
+    }
+}
+
+fn wait_for_health(url: &str, seconds: u64) -> bool {
+    for _ in 0..seconds {
+        if http_request(url, "GET").is_some() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_secs(1));
+    }
+    false
+}
+
+fn local_date_string() -> Option<String> {
+    let out = Command::new("powershell")
+        .args(["-NoProfile", "-Command", "Get-Date -Format yyyy-MM-dd"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+fn last_success_date(path: &str) -> Option<String> {
+    let text = fs::read_to_string(path).ok()?;
+    let json = serde_json::from_str::<serde_json::Value>(&text).ok()?;
+    json["lastSuccessDate"].as_str().map(|s| s.to_string())
+}
+
+fn write_state_success(path: &str, date: &str) -> Option<()> {
+    if let Some(parent) = Path::new(path).parent() {
+        fs::create_dir_all(parent).ok()?;
+    }
+    let value = serde_json::json!({
+        "lastSuccessDate": date,
+        "lastSuccessAt": local_timestamp_string().unwrap_or_else(|| date.to_string())
+    });
+    fs::write(path, serde_json::to_string_pretty(&value).ok()?).ok()
+}
+
+fn write_action_result(path: &str, status: &str, message: &str, details: Option<String>) -> Option<()> {
+    if let Some(parent) = Path::new(path).parent() {
+        fs::create_dir_all(parent).ok()?;
+    }
+    let value = serde_json::json!({
+        "status": status,
+        "checkedAt": local_timestamp_string().unwrap_or_else(|| "unknown".to_string()),
+        "message": message,
+        "details": details.unwrap_or_default()
+    });
+    fs::write(path, serde_json::to_string_pretty(&value).ok()?).ok()
+}
+
+fn local_timestamp_string() -> Option<String> {
+    let out = Command::new("powershell")
+        .args(["-NoProfile", "-Command", "Get-Date -Format o"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
 /// 極簡 HTTP client（只打 127.0.0.1，避免整套 reqwest 依賴）；2xx 回 Some
@@ -222,22 +405,32 @@ pub fn run() {
             save_todos,
             probe,
             watchdog_status,
+            action_status,
             start_service,
             stop_service,
             open_page
         ])
         .setup(|app| {
             let open = MenuItemBuilder::with_id("open", "開啟 Agent Hub").build(app)?;
-            let quit = MenuItemBuilder::with_id("quit", "結束 Hub（服務不受影響）").build(app)?;
+            let quit = MenuItemBuilder::with_id("quit", "退出 Hub 並停止所有服務").build(app)?;
             let menu = MenuBuilder::new(app).items(&[&open, &quit]).build()?;
+            std::thread::spawn(run_startup_actions);
             TrayIconBuilder::with_id("main")
                 .icon(app.default_window_icon().unwrap().clone())
                 .tooltip("Agent Hub")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
-                .on_menu_event(|app, event| match event.id().as_ref() {
+                .on_menu_event(move |app, event| match event.id().as_ref() {
                     "open" => show_main(app),
-                    "quit" => app.exit(0),
+                    "quit" => {
+                        let _ = quit.set_text("正在停止服務並退出...");
+                        let _ = quit.set_enabled(false);
+                        let app = app.clone();
+                        std::thread::spawn(move || {
+                            stop_all_services(&app);
+                            app.exit(0);
+                        });
+                    }
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {

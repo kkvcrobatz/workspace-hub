@@ -19,6 +19,7 @@
   .dot.pending{background:var(--warn)}
   .dot.bad{background:var(--bad);box-shadow:0 0 6px var(--bad)}
   .meta .alert{font-size:12px;color:var(--bad);white-space:pre-wrap;margin-top:2px}
+  .meta .oknote{font-size:12px;color:var(--ok);white-space:pre-wrap;margin-top:2px}
   .meta{flex:1;min-width:0}
   .meta .nm{font-weight:600;cursor:pointer}
   .meta .nm:hover{color:var(--acc)}
@@ -73,24 +74,34 @@ function services(){ return cfg.groups.flatMap(g => g.services); }
 function renderCard(s){
   if (s.kind === "status") {
     const info = statusInfo[s.id];
-    const bad = info && info.alert;
+    const isAction = s.statusFiles && s.statusFiles.resultFile;
+    const bad = info && (info.alert || info.status === "failure");
+    const ok = info && (info.status === "success" || (!isAction && !info.alert));
     const dotCls = !info ? "" : bad ? "bad" : "up";
-    const lastRunTxt = info && info.lastRun ? `最近檢查：${info.lastRun}` : (info ? "尚無巡檢紀錄" : "讀取中…");
+    const lastRunTxt = isAction
+      ? (info && info.checkedAt ? `上次掃描：${info.checkedAt}` : (info ? "尚無掃描紀錄" : "讀取中…"))
+      : (info && info.lastRun ? `最近檢查：${info.lastRun}` : (info ? "尚無巡檢紀錄" : "讀取中…"));
+    const statusTxt = isAction && info ? `．上次結果：${info.status === "success" ? "成功" : info.status === "failure" ? "失敗" : "未知"}` : "";
+    const alertTxt = bad ? (info.alert || info.message || "執行失敗") : "";
+    const noteTxt = ok && isAction && info && info.message ? info.message : "";
     return `<div class="card">
       <div class="dot ${dotCls}"></div>
       <div class="meta">
         <div class="nm">${s.name}</div>
-        <div class="ds">${s.desc ?? ""}．${lastRunTxt}</div>
-        ${bad ? `<div class="alert">${info.alert}</div>` : ""}
+        <div class="ds">${s.desc ?? ""}．${lastRunTxt}${statusTxt}</div>
+        ${alertTxt ? `<div class="alert">${alertTxt}</div>` : ""}
+        ${noteTxt ? `<div class="oknote">${noteTxt}</div>` : ""}
       </div>
     </div>`;
   }
   const up = state[s.id], pending = busy.has(s.id);
+  const downAlert = !pending && !up && s.downAlert;
   return `<div class="card">
-    <div class="dot ${pending ? "pending" : up ? "up" : ""}"></div>
+    <div class="dot ${pending ? "pending" : up ? "up" : downAlert ? "bad" : ""}"></div>
     <div class="meta">
       <div class="nm" data-open="${s.id}">${s.name}</div>
       <div class="ds">${s.desc ?? ""}</div>
+      ${downAlert ? `<div class="alert">${s.downAlert}</div>` : ""}
     </div>
     <button data-act="${s.id}" class="${up ? "stop" : ""}" ${pending ? "disabled" : ""}>
       ${pending ? "…" : up ? "停止" : "啟動"}</button>
@@ -193,10 +204,14 @@ async function waitFor(s, want, secs){
 async function refresh(){
   for (const s of services()) {
     if (s.kind === "status") {
-      statusInfo[s.id] = await invoke("watchdog_status", {
-        alertFile: s.statusFiles.alertFile,
-        logFile: s.statusFiles.logFile
-      });
+      if (s.statusFiles.resultFile) {
+        statusInfo[s.id] = await invoke("action_status", { resultFile: s.statusFiles.resultFile });
+      } else {
+        statusInfo[s.id] = await invoke("watchdog_status", {
+          alertFile: s.statusFiles.alertFile,
+          logFile: s.statusFiles.logFile
+        });
+      }
     } else if (!busy.has(s.id)) {
       state[s.id] = await invoke("probe", { url: s.healthUrl });
     }

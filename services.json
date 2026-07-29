@@ -1,5 +1,5 @@
 {
-  "_readme": "Agent Hub 的服務清單（設定驅動：加服務＝加一段 JSON，不用重編譯）。分組顯示、開關獨立。stop.type: http=打 shutdown 端點優雅退；kill=按命令列 pattern 殺整棵程序樹。healthUrl 要用真實 API 路由——端口有回應≠服務健康（2026-07-06 教訓）。cwd 必填給會寫本地資料的服務——agentmemory 的庫在啟動 cwd 下的 ./data（split-brain 教訓）。kind:\"status\" 的項目是唯讀狀態卡（無啟停按鈕）：讀 statusFiles.alertFile 有無決定燈號，statusFiles.logFile 的最後一行取「最近檢查」時間——用於排程任務類的背景程序（如看門狗），這類東西沒有 HTTP 健康端點可打。",
+  "_readme": "Agent Hub 的服務清單（設定驅動：加服務＝加一段 JSON，不用重編譯）。分組顯示、開關獨立。stop.type: http=打 shutdown 端點優雅退；kill=按命令列 pattern 殺整棵程序樹。healthUrl 要用真實 API 路由——端口有回應≠服務健康（2026-07-06 教訓）。cwd 必填給會寫本地資料的服務——agentmemory 的庫在啟動 cwd 下的 ./data（split-brain 教訓）。kind:\"status\" 的項目是唯讀狀態卡（無啟停按鈕）：讀 statusFiles.alertFile 有無決定燈號，statusFiles.logFile 的最後一行取「最近檢查」時間——用於排程任務類的背景程序（如看門狗），這類東西沒有 HTTP 健康端點可打。kind:\"status\" 搭配 runOnHubStart 可宣告 Hub 啟動時的一次性動作；Hub 會等 dependsOnHealthUrl 健康後執行 command，每日只在 stateFile 記錄的成功日期不同時跑一次，resultFile 顯示上次成功/失敗結果。",
   "groups": [
     {
       "name": "agent-harness",
@@ -23,6 +23,35 @@
           "healthUrl": "http://127.0.0.1:3111/agentmemory/memories?limit=1",
           "open": "http://127.0.0.1:3113",
           "stop": { "type": "kill", "pattern": "@agentmemory/agentmemory|@agentmemory\\\\agentmemory|iii\\.exe --config" }
+        },
+        {
+          "id": "proxy",
+          "name": "觀察落檔緩衝（spool）",
+          "desc": "3114 capture proxy；agentmemory 不可用時把 POST 觀察落到 spool",
+          "start": "node scripts\\agentmemory-capture-proxy.mjs",
+          "cwd": "E:\\Kyle\\Workspace\\agent-harness",
+          "healthUrl": "http://127.0.0.1:3114/healthz",
+          "stop": { "type": "kill", "processName": "node.exe", "pattern": "agentmemory-capture-proxy\\.mjs" },
+          "_stopPatternNote": "2026-07-30 放寬：原本要求 node 之後緊接 scripts/，只命中 Hub 自己的相對路徑啟動形式，抓不到排程任務與看門狗 ensureProxyAlive() 的絕對路徑形式。實際會發生：Hub 啟動 proxy（命中）→ proxy 崩潰 → 看門狗用絕對路徑重啟（不命中）→ Hub 的停止與退出清除靜默失敗 → 下次啟動撞埠。改為只要 node 執行到這個檔名就命中（檔名本身足夠獨特），已驗證命中三種啟動形式、且不命中 mcp-proxy / watchdog / spool-replay / agentmemory 包裝層。",
+          "downAlert": "未啟動：此期間的 agent 觀察不會被記錄"
+        },
+        {
+          "id": "mark-stale",
+          "name": "過期記憶掃描",
+          "desc": "Hub 啟動後每日掃描一次，結果供 MCP 攔截層顯示待查證警示",
+          "kind": "status",
+          "statusFiles": {
+            "resultFile": "E:\\Kyle\\Workspace\\agent-harness\\runtime\\mark-stale-status.json"
+          },
+          "runOnHubStart": {
+            "command": "node scripts\\agentmemory-mark-stale.mjs scan",
+            "cwd": "E:\\Kyle\\Workspace\\agent-harness",
+            "dependsOnHealthUrl": "http://127.0.0.1:3111/agentmemory/memories?limit=1",
+            "stateFile": "E:\\Kyle\\Workspace\\agent-harness\\runtime\\mark-stale-state.json",
+            "resultFile": "E:\\Kyle\\Workspace\\agent-harness\\runtime\\mark-stale-status.json",
+            "oncePerDay": true,
+            "waitSeconds": 90
+          }
         },
         {
           "id": "watchdog",
