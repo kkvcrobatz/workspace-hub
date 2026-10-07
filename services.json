@@ -9,7 +9,7 @@
           "id": "tw-stock-discipline",
           "name": "台股紀律檢查",
           "desc": "S1–S4 篩選＋持股 S5/S6 監控（非買進建議）．127.0.0.1:4327",
-          "start": "powershell -NoProfile -ExecutionPolicy Bypass -File E:\\Kyle\\Workspace\\tw-stock-pullback\\scripts\\serve.ps1",
+          "start": "powershell -NoProfile -ExecutionPolicy Bypass -File E:\\Kyle\\Workspace\\tw-stock-pullback\\scripts\\serve.ps1 -Persistent",
           "cwd": "E:\\Kyle\\Workspace\\tw-stock-pullback",
           "healthUrl": "http://127.0.0.1:4327/api/health",
           "open": "http://127.0.0.1:4327/?token={file:E:\\Kyle\\Workspace\\tw-stock-pullback\\.session-token-persistent}",
