@@ -6,6 +6,14 @@
       "name": "交易",
       "services": [
         {
+          "id": "strategy-ledger",
+          "name": "策略總帳",
+          "desc": "所有策略的來源、假說、結果與淘汰原因（claude.ai artifact，用系統瀏覽器開）",
+          "kind": "info",
+          "open": "https://claude.ai/artifact/6NCUhc5zT5tVLudXh24Gjb",
+          "external": true
+        },
+        {
           "id": "tw-stock-discipline",
           "name": "台股紀律檢查",
           "desc": "S1–S4 篩選＋持股 S5/S6 監控（非買進建議）．127.0.0.1:4327",

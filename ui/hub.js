@@ -77,7 +77,8 @@
   }
   function renderInfo(g, s) {
     return row("info", stateCell("info", ""), mainCell(s, `<div class="nm">${esc(s.name)}</div>`),
-      s.note ? `<span class="note" title="${esc(s.note)}">${esc(s.note)}</span>` : "", archiveControl(g, s));
+      s.note ? `<span class="note" title="${esc(s.note)}">${esc(s.note)}</span>` : "",
+      (s.open ? `<button type="button" class="txt" data-open="${esc(s.id)}">開啟</button>` : "") + archiveControl(g, s));
   }
 
   /// 狀態列的燈號與文字：排程（taskName）、動作結果（resultFile）、看門狗（alertFile+logFile）可疊加
@@ -216,7 +217,7 @@
     const s = findService(id);
     if (!s?.open) return;
     setErr("");
-    try { await invoke("open_page", { id: "page-" + s.id, url: s.open, title: s.name }); }
+    try { await invoke("open_page", { id: "page-" + s.id, url: s.open, title: s.name, external: !!s.external }); }
     catch (e) { setErr(`${s.name}：${e}`); }
   }
 

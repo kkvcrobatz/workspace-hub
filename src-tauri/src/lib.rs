@@ -186,7 +186,12 @@ fn stop_service_inner(state: &Spawned, id: &str, stop: &serde_json::Value) -> Re
 }
 
 #[tauri::command]
-async fn open_page(app: AppHandle, id: String, url: String, title: String) -> Result<(), String> {
+async fn open_page(app: AppHandle, id: String, url: String, title: String, external: Option<bool>) -> Result<(), String> {
+    // external:true（例如 claude.ai 的 artifact）直接交給系統瀏覽器，沿用使用者已登入的 session
+    if external.unwrap_or(false) {
+        Command::new("cmd").args(["/c", "start", "", &url]).creation_flags(CREATE_NO_WINDOW).spawn().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
     if let Some(w) = app.get_webview_window(&id) {
         let _ = w.show();
         let _ = w.unminimize();
