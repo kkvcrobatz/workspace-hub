@@ -12,7 +12,7 @@
           "start": "powershell -NoProfile -ExecutionPolicy Bypass -File E:\\Kyle\\Workspace\\tw-stock-pullback\\scripts\\serve.ps1",
           "cwd": "E:\\Kyle\\Workspace\\tw-stock-pullback",
           "healthUrl": "http://127.0.0.1:4327/api/health",
-          "open": "http://127.0.0.1:4327/?token={file:E:\\Kyle\\Workspace\\tw-stock-pullback\\.session-token}",
+          "open": "http://127.0.0.1:4327/?token={file:E:\\Kyle\\Workspace\\tw-stock-pullback\\.session-token-persistent}",
           "stop": { "type": "kill", "pattern": "twstock\\.app\\.serve", "processName": "python.exe" }
         },
         {
