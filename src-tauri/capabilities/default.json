@@ -2,5 +2,9 @@
   "identifier": "default",
   "description": "main window: core APIs + app commands",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default", "allow-load-config", "allow-load-todos", "allow-save-todos",
+    "allow-probe", "allow-scheduled-task-status", "allow-watchdog-status", "allow-action-status",
+    "allow-start-service", "allow-stop-service", "allow-open-page"
+  ]
 }

@@ -1,13 +1,119 @@
 {
-  "_readme": "Agent Hub 的服務清單（設定驅動：加服務＝加一段 JSON，不用重編譯）。分組顯示、開關獨立。stop.type: http=打 shutdown 端點優雅退；kill=按命令列 pattern 殺整棵程序樹。healthUrl 要用真實 API 路由——端口有回應≠服務健康（2026-07-06 教訓）。cwd 必填給會寫本地資料的服務——agentmemory 的庫在啟動 cwd 下的 ./data（split-brain 教訓）。kind:\"status\" 的項目是唯讀狀態卡（無啟停按鈕）：讀 statusFiles.alertFile 有無決定燈號，statusFiles.logFile 的最後一行取「最近檢查」時間——用於排程任務類的背景程序（如看門狗），這類東西沒有 HTTP 健康端點可打。kind:\"status\" 搭配 runOnHubStart 可宣告 Hub 啟動時的一次性動作；Hub 會等 dependsOnHealthUrl 健康後執行 command，每日只在 stateFile 記錄的成功日期不同時跑一次，resultFile 顯示上次成功/失敗結果。",
+  "_readme": "Workspace Hub 的服務清單（設定驅動：加服務＝加一段 JSON，不用重編譯；欄位說明見 README.md「卡片型態」）。appName：視窗標題／系統匣／捷徑名。群組或服務加 archived:true＝封存（預設隱藏、不探健康、無啟停）。字串樣板：{file:<路徑>} 讀檔去頭尾空白代入（token 檔）、{date:yyyyMMdd} 本機日期；可用在 open／healthUrl／statusFiles.*。kind:status 可填 taskName（Windows 工作排程器任務名，走 schtasks 讀上次／下次執行）並可搭配 statusFiles.logFile。kind:info＝純說明卡。stop.type kill 一定要設 processName（2026-07-30 誤殺教訓）。healthUrl 要用真實 API 路由——端口有回應≠服務健康。",
+  "appName": "Workspace Hub",
   "groups": [
     {
+      "name": "交易",
+      "services": [
+        {
+          "id": "tw-stock-discipline",
+          "name": "台股紀律檢查",
+          "desc": "S1–S4 篩選＋持股 S5/S6 監控（非買進建議）．127.0.0.1:4327",
+          "start": "powershell -NoProfile -ExecutionPolicy Bypass -File E:\\Kyle\\Workspace\\tw-stock-pullback\\scripts\\serve.ps1",
+          "cwd": "E:\\Kyle\\Workspace\\tw-stock-pullback",
+          "healthUrl": "http://127.0.0.1:4327/api/health",
+          "open": "http://127.0.0.1:4327/?token={file:E:\\Kyle\\Workspace\\tw-stock-pullback\\.session-token}",
+          "stop": { "type": "kill", "pattern": "twstock\\.app\\.serve", "processName": "python.exe" }
+        },
+        {
+          "id": "broker-cockpit",
+          "name": "交易駕駛艙（fake broker）",
+          "desc": "broker-gateway 駕駛艙，--broker fake 不連群益．127.0.0.1:8787（首頁自動帶 token）",
+          "start": "E:\\Kyle\\Workspace\\agent-harness\\runtime\\.venv\\Scripts\\python.exe -X utf8 scripts\\serve.py --broker fake",
+          "cwd": "E:\\Kyle\\Workspace\\broker-gateway",
+          "healthUrl": "http://127.0.0.1:8787/",
+          "open": "http://127.0.0.1:8787/",
+          "stop": { "type": "kill", "pattern": "scripts\\\\serve\\.py --broker", "processName": "python.exe" }
+        },
+        {
+          "id": "record-capital",
+          "name": "群益錄製器",
+          "desc": "排程 trading-data-record-session（S4U），錄 TXF/MXF/TMF/SRF/NYF ticks",
+          "kind": "status",
+          "taskName": "trading-data-record-session",
+          "statusFiles": { "logFile": "E:\\Kyle\\Workspace\\trading\\data\\logs\\{date:yyyyMMdd}-record.log" }
+        },
+        {
+          "id": "record-fubon",
+          "name": "富邦錄製器",
+          "desc": "排程 trading-data-record-session-fubon，WebSocket 第二錄製來源",
+          "kind": "status",
+          "taskName": "trading-data-record-session-fubon",
+          "statusFiles": { "logFile": "E:\\Kyle\\Workspace\\trading\\data\\logs\\{date:yyyyMMdd}-record-fubon.log" }
+        },
+        {
+          "id": "fetch-sinopac",
+          "name": "永豐歷史 ticks 回補",
+          "desc": "排程 trading-data-fetch-sinopac-ticks（只 TXF）",
+          "kind": "status",
+          "taskName": "trading-data-fetch-sinopac-ticks",
+          "statusFiles": { "logFile": "E:\\Kyle\\Workspace\\trading\\data\\logs\\{date:yyyyMMdd}-fetch-sinopac.log" }
+        },
+        {
+          "id": "fetch-daily",
+          "name": "每晚資料排程",
+          "desc": "排程 trading-data-fetch-daily（fetch-daily.ps1：期交所／台股篩選／Discord 摘要）",
+          "kind": "status",
+          "taskName": "trading-data-fetch-daily",
+          "statusFiles": { "logFile": "E:\\Kyle\\Workspace\\trading\\data\\logs\\{date:yyyyMMdd}.log" }
+        },
+        {
+          "id": "holdings-sync",
+          "name": "庫存同步",
+          "desc": "排程 trading-stock-holdings-sync（sync-holdings.ps1）",
+          "kind": "status",
+          "taskName": "trading-stock-holdings-sync",
+          "statusFiles": { "logFile": "E:\\Kyle\\Workspace\\trading\\data\\logs\\{date:yyyyMMdd}-sync-holdings.log" }
+        }
+      ]
+    },
+    {
+      "name": "開發中專案",
+      "services": [
+        {
+          "id": "money-manager",
+          "name": "money_manager",
+          "desc": "React 19 記帳 App（純前端，LocalStorage）．vite dev 127.0.0.1:5173",
+          "start": "npm run dev",
+          "cwd": "E:\\Kyle\\Workspace\\money_manager",
+          "healthUrl": "http://127.0.0.1:5173/",
+          "open": "http://127.0.0.1:5173/",
+          "stop": { "type": "kill", "pattern": "money_manager\\\\node_modules\\\\.*vite", "processName": "node.exe" }
+        },
+        {
+          "id": "graph-rag",
+          "name": "graph_rag",
+          "desc": "Django GraphRAG 後端（用專案自己的 .venv；runtime venv 沒裝 Django）．127.0.0.1:8000",
+          "start": "E:\\Kyle\\Workspace\\graph_rag\\.venv\\Scripts\\python.exe manage.py runserver 127.0.0.1:8000 --noreload",
+          "cwd": "E:\\Kyle\\Workspace\\graph_rag",
+          "healthUrl": "http://127.0.0.1:8000/healthz",
+          "open": "http://127.0.0.1:8000/",
+          "stop": { "type": "kill", "pattern": "manage\\.py runserver 127\\.0\\.0\\.1:8000", "processName": "python.exe" }
+        },
+        {
+          "id": "geyser",
+          "name": "geyser",
+          "desc": "素材噴水池：Phase 0 Telegram bot 收件匣（npm run bot），沒有 HTTP 端點",
+          "kind": "info",
+          "note": "設計全文 geyser\\design.md；bot 需 GEYSER_TG_TOKEN，不由 Hub 啟動"
+        },
+        {
+          "id": "daily-speak",
+          "name": "daily-speak",
+          "desc": "每日英文朗讀錄音 Android app：需求階段（PRD v0.1），尚未動工",
+          "kind": "info",
+          "note": "daily-speak\\docs\\PRD.md"
+        }
+      ]
+    },
+    {
       "name": "agent-harness",
+      "archived": true,
       "services": [
         {
           "id": "console",
           "name": "控制台",
-          "desc": "Sessions / Memory / Skills·MCP / Evals / 機制",
+          "desc": "Sessions / 知識與歷史 / Skills·MCP / Evals / 機制（已過期，2026-10-07 封存）",
           "start": "harness serve",
           "cwd": "E:\\Kyle\\Workspace\\agent-harness",
           "healthUrl": "http://127.0.0.1:4317/api/overview",
@@ -15,48 +121,9 @@
           "stop": { "type": "http", "url": "http://127.0.0.1:4317/api/shutdown" }
         },
         {
-          "id": "agentmemory",
-          "name": "agentmemory（共用記憶）",
-          "desc": "3111 API＋3113 viewer；控制台啟動時也會自動拉起它",
-          "start": "npx -y @agentmemory/agentmemory",
-          "cwd": "E:\\Kyle\\Workspace\\agent-harness",
-          "healthUrl": "http://127.0.0.1:3111/agentmemory/memories?limit=1",
-          "open": "http://127.0.0.1:3113",
-          "stop": { "type": "kill", "pattern": "@agentmemory/agentmemory|@agentmemory\\\\agentmemory|iii\\.exe --config" }
-        },
-        {
-          "id": "proxy",
-          "name": "觀察落檔緩衝（spool）",
-          "desc": "3114 capture proxy；agentmemory 不可用時把 POST 觀察落到 spool",
-          "start": "node scripts\\agentmemory-capture-proxy.mjs",
-          "cwd": "E:\\Kyle\\Workspace\\agent-harness",
-          "healthUrl": "http://127.0.0.1:3114/healthz",
-          "stop": { "type": "kill", "processName": "node.exe", "pattern": "agentmemory-capture-proxy\\.mjs" },
-          "_stopPatternNote": "2026-07-30 放寬：原本要求 node 之後緊接 scripts/，只命中 Hub 自己的相對路徑啟動形式，抓不到排程任務與看門狗 ensureProxyAlive() 的絕對路徑形式。實際會發生：Hub 啟動 proxy（命中）→ proxy 崩潰 → 看門狗用絕對路徑重啟（不命中）→ Hub 的停止與退出清除靜默失敗 → 下次啟動撞埠。改為只要 node 執行到這個檔名就命中（檔名本身足夠獨特），已驗證命中三種啟動形式、且不命中 mcp-proxy / watchdog / spool-replay / agentmemory 包裝層。",
-          "downAlert": "未啟動：此期間的 agent 觀察不會被記錄"
-        },
-        {
-          "id": "mark-stale",
-          "name": "過期記憶掃描",
-          "desc": "Hub 啟動後每日掃描一次，結果供 MCP 攔截層顯示待查證警示",
-          "kind": "status",
-          "statusFiles": {
-            "resultFile": "E:\\Kyle\\Workspace\\agent-harness\\runtime\\mark-stale-status.json"
-          },
-          "runOnHubStart": {
-            "command": "node scripts\\agentmemory-mark-stale.mjs scan",
-            "cwd": "E:\\Kyle\\Workspace\\agent-harness",
-            "dependsOnHealthUrl": "http://127.0.0.1:3111/agentmemory/memories?limit=1",
-            "stateFile": "E:\\Kyle\\Workspace\\agent-harness\\runtime\\mark-stale-state.json",
-            "resultFile": "E:\\Kyle\\Workspace\\agent-harness\\runtime\\mark-stale-status.json",
-            "oncePerDay": true,
-            "waitSeconds": 90
-          }
-        },
-        {
           "id": "watchdog",
           "name": "看門狗",
-          "desc": "3111/4317/proxy 健康巡檢，排程每 2 分鐘（S4U，無視窗）",
+          "desc": "控制台健康巡檢，排程每 2 分鐘（S4U，無視窗）",
           "kind": "status",
           "statusFiles": {
             "alertFile": "E:\\Kyle\\Workspace\\agent-harness\\runtime\\watchdog-alert.txt",

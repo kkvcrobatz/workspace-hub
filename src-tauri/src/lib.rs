@@ -1,5 +1,7 @@
-// Agent Hub：本機服務啟動器（設定驅動，見 ../../services.json）
-// 職責邊界：hub 是 agent-harness 服務的總開關；關主視窗只縮到系統匣，退出才停止服務。
+// Workspace Hub：整個 workspace 的統一入口（設定驅動，見 ../../services.json；名稱由 appName 決定）
+// 關主視窗縮到系統匣；退出桌面程式保留背景服務。
+mod schtasks;
+mod template;
 use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
@@ -16,6 +18,27 @@ use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder};
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const SERVICES_PATH: &str = r"E:\Kyle\Workspace\agent-harness\hub\services.json";
 const TODOS_PATH: &str = r"E:\Kyle\Workspace\agent-harness\hub\data\todos.json";
+const DEFAULT_APP_NAME: &str = "Workspace Hub";
+
+fn services_path() -> String {
+    std::env::var("HUB_SERVICES").unwrap_or_else(|_| SERVICES_PATH.to_string())
+}
+
+fn read_config() -> Result<serde_json::Value, String> {
+    let path = services_path();
+    let text = fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))?;
+    serde_json::from_str(&text).map_err(|e| format!("services.json 解析失敗: {e}"))
+}
+
+/// 視窗標題、系統匣、捷徑名都用它；單實例鎖與設定路徑不跟著變。
+fn app_name(cfg: &serde_json::Value) -> String {
+    cfg["appName"].as_str().map(str::trim).filter(|s| !s.is_empty()).unwrap_or(DEFAULT_APP_NAME).to_string()
+}
+
+/// 把 services.json 字串裡的 `{file:}` / `{date:}` 樣板展開（見 template.rs）。
+fn expand(text: &str) -> Result<String, String> {
+    template::resolve(text, chrono::Local::now())
+}
 
 /// hub 自己 spawn 的服務：id -> 包裹程序 pid（停止時 taskkill /T 殺整棵樹）
 #[derive(Default)]
@@ -25,9 +48,7 @@ struct Spawned(Mutex<HashMap<String, u32>>);
 // 在裡面開視窗會死鎖事件迴圈（視窗一片白、整個 app 凍住）；async 走工作執行緒池。
 #[tauri::command]
 async fn load_config() -> Result<serde_json::Value, String> {
-    let path = std::env::var("HUB_SERVICES").unwrap_or_else(|_| SERVICES_PATH.to_string());
-    let text = std::fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))?;
-    serde_json::from_str(&text).map_err(|e| format!("services.json 解析失敗: {e}"))
+    read_config()
 }
 
 #[tauri::command]
@@ -48,17 +69,26 @@ async fn save_todos(todos: serde_json::Value) -> Result<(), String> {
     std::fs::write(TODOS_PATH, text).map_err(|e| format!("{TODOS_PATH}: {e}"))
 }
 
-/// 健康檢查：打真實 API 路由拿 2xx 才算活（端口有回應 ≠ 服務健康）
+/// 健康檢查：打真實 API 路由拿 2xx 才算活（端口有回應 ≠ 服務健康）。
+/// URL 可含樣板；樣板展不開（例如 token 檔還沒生成）視同未啟動。
 #[tauri::command]
 async fn probe(url: String) -> bool {
-    http_request(&url, "GET").is_some()
+    expand(&url).map(|u| http_request(&u, "GET").is_some()).unwrap_or(false)
+}
+
+/// Windows 工作排程器任務的唯讀狀態（上次執行／結果／下次執行），走 schtasks 不走 WMI。
+#[tauri::command]
+async fn scheduled_task_status(task_name: String) -> serde_json::Value {
+    schtasks::query(&task_name)
 }
 
 /// 排程任務類背景程序的唯讀狀態（無 HTTP 端點可打）：alertFile 存在＝紅燈＋內容摘要；
 /// logFile 最後一行取時間戳當「最近檢查」。兩者都是純檔案讀取，讀不到就回「未知」而非報錯，
 /// 避免看門狗本身還沒跑過第一輪時，卡片直接顯示錯誤。
 #[tauri::command]
-async fn watchdog_status(alert_file: String, log_file: String) -> serde_json::Value {
+async fn watchdog_status(alert_file: Option<String>, log_file: Option<String>) -> serde_json::Value {
+    let alert_file = alert_file.as_deref().map(expand).and_then(Result::ok).unwrap_or_default();
+    let log_file = log_file.as_deref().map(expand).and_then(Result::ok).unwrap_or_default();
     let alert = std::fs::read_to_string(&alert_file)
         .ok()
         .map(|s| s.trim().to_string())
@@ -66,9 +96,12 @@ async fn watchdog_status(alert_file: String, log_file: String) -> serde_json::Va
     let last_run = std::fs::read_to_string(&log_file)
         .ok()
         .and_then(|text| {
+            // 只看最後一行非空內容：排程 log 中間偶有 [完成] 之類的行，往回掃會抓到不相干的字
             text.lines()
                 .rev()
-                .find(|l| l.trim_start().starts_with('['))
+                .map(str::trim)
+                .find(|l| !l.is_empty())
+                .filter(|l| l.starts_with('['))
                 .map(|l| l.to_string())
         })
         .and_then(|line| {
@@ -76,11 +109,16 @@ async fn watchdog_status(alert_file: String, log_file: String) -> serde_json::Va
                 .and_then(|rest| rest.split(']').next())
                 .map(|ts| ts.to_string())
         });
-    serde_json::json!({ "alert": alert, "lastRun": last_run })
+    // 排程任務的 log 沒有 [時間] 前綴：取最後一行非空內容當「最近紀錄」（截斷，避免卡片爆版）
+    let last_line = std::fs::read_to_string(&log_file).ok().and_then(|text| {
+        text.lines().rev().map(str::trim).find(|l| !l.is_empty()).map(|l| l.chars().take(160).collect::<String>())
+    });
+    serde_json::json!({ "alert": alert, "lastRun": last_run, "lastLine": last_line, "logFile": log_file })
 }
 
 #[tauri::command]
 async fn action_status(result_file: String) -> serde_json::Value {
+    let result_file = expand(&result_file).unwrap_or(result_file);
     match std::fs::read_to_string(&result_file)
         .ok()
         .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
@@ -139,6 +177,8 @@ async fn open_page(app: AppHandle, id: String, url: String, title: String) -> Re
         let _ = w.set_focus();
         return Ok(());
     }
+    // 樣板展不開（token 檔不存在）＝服務還沒啟動；錯誤訊息只含路徑，不含 token 內容
+    let url = expand(&url).map_err(|e| format!("尚未啟動（{e}）"))?;
     let parsed: tauri::Url = url.parse().map_err(|e| format!("URL 不合法: {e}"))?;
     let origin = (parsed.host_str().map(String::from), parsed.port_or_known_default());
     // webview 預設丟棄 target=_blank：注入腳本把 _blank/window.open 轉成本視窗導航，
@@ -208,37 +248,19 @@ fn kill_by_cmdline(pattern: &str, process_name: Option<&str>) -> Result<(), Stri
     Ok(())
 }
 
-fn stop_all_services(app: &AppHandle) {
-    let path = std::env::var("HUB_SERVICES").unwrap_or_else(|_| SERVICES_PATH.to_string());
-    let Ok(text) = fs::read_to_string(&path) else { return; };
-    let Ok(cfg) = serde_json::from_str::<serde_json::Value>(&text) else { return; };
-    let state = app.state::<Spawned>();
-    if let Some(groups) = cfg["groups"].as_array() {
-        for group in groups {
-            if let Some(services) = group["services"].as_array() {
-                for service in services {
-                    if service["kind"].as_str() == Some("status") {
-                        continue;
-                    }
-                    let Some(id) = service["id"].as_str() else { continue; };
-                    if !service["stop"].is_object() {
-                        continue;
-                    }
-                    let _ = stop_service_inner(&state, id, &service["stop"]);
-                }
-            }
-        }
-    }
-}
-
+/// 封存的群組／服務不做任何自動動作
 fn run_startup_actions() {
-    let path = std::env::var("HUB_SERVICES").unwrap_or_else(|_| SERVICES_PATH.to_string());
-    let Ok(text) = fs::read_to_string(&path) else { return; };
-    let Ok(cfg) = serde_json::from_str::<serde_json::Value>(&text) else { return; };
+    let Ok(cfg) = read_config() else { return; };
     if let Some(groups) = cfg["groups"].as_array() {
         for group in groups {
+            if group["archived"].as_bool().unwrap_or(false) {
+                continue;
+            }
             if let Some(services) = group["services"].as_array() {
                 for service in services {
+                    if service["archived"].as_bool().unwrap_or(false) {
+                        continue;
+                    }
                     if let Some(action) = service["runOnHubStart"].as_object() {
                         run_startup_action(service["id"].as_str().unwrap_or("startup-action"), action);
                     }
@@ -266,7 +288,7 @@ fn run_startup_action(id: &str, action: &serde_json::Map<String, serde_json::Val
     if let Some(url) = action.get("dependsOnHealthUrl").and_then(|v| v.as_str()) {
         let wait_seconds = action.get("waitSeconds").and_then(|v| v.as_u64()).unwrap_or(90);
         if !wait_for_health(url, wait_seconds) {
-            write_action_result(result_file, "failure", "agentmemory 3111 尚未通過健康檢查，未執行掃描", None);
+            write_action_result(result_file, "failure", "依賴服務尚未通過健康檢查，未執行動作", None);
             return;
         }
     }
@@ -309,15 +331,7 @@ fn wait_for_health(url: &str, seconds: u64) -> bool {
 }
 
 fn local_date_string() -> Option<String> {
-    let out = Command::new("powershell")
-        .args(["-NoProfile", "-Command", "Get-Date -Format yyyy-MM-dd"])
-        .creation_flags(CREATE_NO_WINDOW)
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    Some(chrono::Local::now().format("%Y-%m-%d").to_string())
 }
 
 fn last_success_date(path: &str) -> Option<String> {
@@ -351,15 +365,7 @@ fn write_action_result(path: &str, status: &str, message: &str, details: Option<
 }
 
 fn local_timestamp_string() -> Option<String> {
-    let out = Command::new("powershell")
-        .args(["-NoProfile", "-Command", "Get-Date -Format o"])
-        .creation_flags(CREATE_NO_WINDOW)
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    Some(chrono::Local::now().to_rfc3339())
 }
 
 /// 極簡 HTTP client（只打 127.0.0.1，避免整套 reqwest 依賴）；2xx 回 Some
@@ -404,6 +410,7 @@ pub fn run() {
             load_todos,
             save_todos,
             probe,
+            scheduled_task_status,
             watchdog_status,
             action_status,
             start_service,
@@ -411,25 +418,23 @@ pub fn run() {
             open_page
         ])
         .setup(|app| {
-            let open = MenuItemBuilder::with_id("open", "開啟 Agent Hub").build(app)?;
-            let quit = MenuItemBuilder::with_id("quit", "退出 Hub 並停止所有服務").build(app)?;
+            let name = read_config().map(|cfg| app_name(&cfg)).unwrap_or_else(|_| DEFAULT_APP_NAME.to_string());
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.set_title(&name);
+            }
+            let open = MenuItemBuilder::with_id("open", format!("開啟 {name}")).build(app)?;
+            let quit = MenuItemBuilder::with_id("quit", "退出桌面程式（背景服務繼續執行）").build(app)?;
             let menu = MenuBuilder::new(app).items(&[&open, &quit]).build()?;
             std::thread::spawn(run_startup_actions);
             TrayIconBuilder::with_id("main")
                 .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("Agent Hub")
+                .tooltip(&name)
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(move |app, event| match event.id().as_ref() {
                     "open" => show_main(app),
                     "quit" => {
-                        let _ = quit.set_text("正在停止服務並退出...");
-                        let _ = quit.set_enabled(false);
-                        let app = app.clone();
-                        std::thread::spawn(move || {
-                            stop_all_services(&app);
-                            app.exit(0);
-                        });
+                        app.exit(0);
                     }
                     _ => {}
                 })
@@ -451,5 +456,5 @@ pub fn run() {
             }
         })
         .run(tauri::generate_context!())
-        .expect("Agent Hub 啟動失敗");
+        .expect("Workspace Hub 啟動失敗");
 }

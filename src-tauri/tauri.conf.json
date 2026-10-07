@@ -11,15 +11,15 @@
     "windows": [
       {
         "label": "main",
-        "title": "Agent Hub",
-        "width": 460,
-        "height": 560,
-        "minWidth": 380,
-        "minHeight": 400
+        "title": "Workspace Hub",
+        "width": 1380,
+        "height": 920,
+        "minWidth": 900,
+        "minHeight": 640
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'self'"
     }
   },
   "bundle": {
