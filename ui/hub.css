@@ -14,6 +14,7 @@
   --sans:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;
   --mono:"Cascadia Mono",Consolas,"Courier New",monospace;
   --col-state:92px;
+  --col-src:fit-content(14ch);
   --col-meta:fit-content(38ch);
   --col-act:max-content;
 }
@@ -55,7 +56,7 @@ h1{font-size:17px;font-weight:600;letter-spacing:.2px}
 .gactions{margin-left:auto;display:flex;align-items:baseline;gap:12px;font-size:13px}
 
 /* ---------- 列 ---------- */
-.row{display:grid;grid-template-columns:var(--col-state) minmax(0,1fr) var(--col-meta) var(--col-act);column-gap:20px;
+.row{display:grid;grid-template-columns:var(--col-state) minmax(0,1fr) var(--col-src) var(--col-meta) var(--col-act);column-gap:20px;
      border-bottom:1px solid var(--line)}
 .row>*{padding:9px 0 10px;min-width:0}
 .row:hover{background:var(--row-hover)}
@@ -77,6 +78,7 @@ button.nm:hover .ext{color:var(--acc)}
 .oknote{font-size:12.5px;color:var(--ok);white-space:pre-wrap;margin-top:3px}
 .lastline{font:12px var(--mono);color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px}
 .meta{font:12.5px/1.6 var(--mono);color:var(--fg);align-self:start;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.src{font:12.5px/1.6 var(--mono);color:var(--dim);align-self:start;white-space:nowrap}
 .meta .k{color:var(--dim);margin-right:.6em}
 .meta .note{color:var(--dim)}
 .meta .r-success{color:var(--ok)}.meta .r-failure{color:var(--bad)}.meta .r-running{color:var(--warn)}

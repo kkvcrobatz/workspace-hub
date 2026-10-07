@@ -68,17 +68,27 @@
   /// 狀態欄：燈點＋字（不只靠顏色）
   const stateCell = (k, label) => `<div class="state ${k}${label ? "" : " none"}"><span class="dot"></span>${label ? `<span>${esc(label)}</span>` : ""}</div>`;
   const port = s => { try { const p = new URL(s.healthUrl || "").port; return p ? `<span class="k">port</span>${esc(p)}` : ""; } catch { return ""; } };
-  const row = (cls, state, main, meta, acts) =>
-    `<div class="row ${cls}">${state}<div class="main">${main}</div><div class="meta">${meta}</div><div class="acts">${acts}</div></div>`;
+  /// 來源欄：services.json 可明寫 `source`；沒寫就從設定推：artifact／port／排程／說明
+  const sourceCell = s => {
+    if (s.source) return esc(s.source);
+    const u = s.open || s.healthUrl || "";
+    if (/claude\.ai\/(code\/)?artifact\//.test(u)) return "artifact";
+    try { const p = new URL(u).port; if (p) return `port ${esc(p)}`; } catch {}
+    if (s.taskName) return "排程";
+    if (s.kind === "status") return "狀態檔";
+    return s.kind === "info" ? "說明" : "";
+  };
+  const row = (cls, state, main, meta, acts, src) =>
+    `<div class="row ${cls}">${state}<div class="main">${main}</div><div class="src">${src ?? ""}</div><div class="meta">${meta}</div><div class="acts">${acts}</div></div>`;
   const mainCell = (s, nameHtml) => `${nameHtml}<div class="ds" title="${esc(s.desc ?? "")}">${esc(s.desc ?? "")}</div>`;
 
   function renderArchived(g, s) {
-    return row("archived", stateCell("archived", "封存"), mainCell(s, `<div class="nm">${esc(s.name)}</div>`), "", archiveControl(g, s));
+    return row("archived", stateCell("archived", "封存"), mainCell(s, `<div class="nm">${esc(s.name)}</div>`), "", archiveControl(g, s), sourceCell(s));
   }
   function renderInfo(g, s) {
     return row("info", stateCell("info", ""), mainCell(s, `<div class="nm">${esc(s.name)}</div>`),
       s.note ? `<span class="note" title="${esc(s.note)}">${esc(s.note)}</span>` : "",
-      (s.open ? `<button type="button" class="txt" data-open="${esc(s.id)}">開啟</button>` : "") + archiveControl(g, s));
+      (s.open ? `<button type="button" class="txt" data-open="${esc(s.id)}">開啟</button>` : "") + archiveControl(g, s), sourceCell(s));
   }
 
   /// 狀態列的燈號與文字：排程（taskName）、動作結果（resultFile）、看門狗（alertFile+logFile）可疊加
@@ -120,7 +130,7 @@
       ${v.alert ? `<div class="alert">${esc(v.alert)}</div>` : ""}
       ${v.note ? `<div class="oknote">${esc(v.note)}</div>` : ""}
       ${v.last ? `<div class="lastline" title="log 最後一行：${esc(v.last)}">${esc(v.last)}</div>` : ""}`;
-    return row("status", stateCell(k, STATE_LABEL[k]), main, v.lines.join("<br>"), archiveControl(g, s));
+    return row("status", stateCell(k, STATE_LABEL[k]), main, v.lines.join("<br>"), archiveControl(g, s), sourceCell(s));
   }
 
   function renderService(g, s) {
@@ -134,7 +144,7 @@
     const acts = `<button type="button" data-act="${esc(s.id)}" class="txt ${up ? "stop" : ""}" ${pending ? "disabled" : ""}>${pending ? "…" : up ? "停止" : "啟動"}</button>
       ${s.open ? `<button type="button" class="txt" data-open="${esc(s.id)}">開啟</button>` : ""}
       ${archiveControl(g, s)}`;
-    return row("service", stateCell(k, STATE_LABEL[k]), main, port(s), acts);
+    return row("service", stateCell(k, STATE_LABEL[k]), main, port(s), acts, sourceCell(s));
   }
 
   function renderCard(g, s) {
