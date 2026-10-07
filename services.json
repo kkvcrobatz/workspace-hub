@@ -14,6 +14,38 @@
           "external": true
         },
         {
+          "id": "teach-wyckoff",
+          "name": "教學：Wyckoff",
+          "desc": "威科夫方法（累積／派發、彈簧、SOS）教學 artifact",
+          "kind": "info",
+          "open": "https://claude.ai/artifact/4S4537nNmUpKouVxeYoQUg",
+          "external": true
+        },
+        {
+          "id": "teach-orderflow",
+          "name": "教學：訂單流",
+          "desc": "Delta／CVD／footprint／吸收與失衡教學 artifact",
+          "kind": "info",
+          "open": "https://claude.ai/artifact/H1M1LFNyNC1F5CAg9icWz8",
+          "external": true
+        },
+        {
+          "id": "teach-wave",
+          "name": "教學：波浪與費波",
+          "desc": "艾略特波浪、費波那契比例教學 artifact",
+          "kind": "info",
+          "open": "https://claude.ai/artifact/WdX78oc4XwfANp2iS5Q7ap",
+          "external": true
+        },
+        {
+          "id": "teach-patterns",
+          "name": "教學：型態學",
+          "desc": "經典價格型態（含通道擠壓）教學 artifact",
+          "kind": "info",
+          "open": "https://claude.ai/artifact/5oAuAL69JPxMXJ9D5JaLeA",
+          "external": true
+        },
+        {
           "id": "tw-stock-discipline",
           "name": "台股紀律檢查",
           "desc": "S1–S4 篩選＋持股 S5/S6 監控（非買進建議）．127.0.0.1:4327",
