@@ -11,14 +11,14 @@
   <div class="app-brand"><span class="app-mark" aria-hidden="true">⌂</span><h1 id="app-name">Workspace Hub</h1></div>
   <div class="app-actions">
     <label class="toggle"><input id="show-archived" type="checkbox"> 顯示封存</label>
-    <button id="refresh" type="button">重新整理</button>
+    <button id="refresh" type="button" class="txt">重新整理</button>
   </div>
 </header>
 <main>
   <div id="root" class="groups">正在讀取服務清單…</div>
   <section id="todos" class="todos" aria-labelledby="todos-title">
-    <h2 id="todos-title" class="gname">個人待辦</h2>
-    <div class="todo-add"><input id="todoInput" type="text" placeholder="記下下一步…" autocomplete="off" aria-label="新增待辦"><button id="todoAdd" type="button">新增</button></div>
+    <div class="ghead"><h2 id="todos-title" class="gname">個人待辦</h2></div>
+    <div class="todo-add"><input id="todoInput" type="text" placeholder="記下下一步…" autocomplete="off" aria-label="新增待辦"><button id="todoAdd" type="button" class="txt">新增</button></div>
     <div id="todoList"></div>
   </section>
   <div id="err" role="alert"></div>

@@ -1,7 +1,9 @@
 # Workspace Hub（Tauri 本機桌面程式）
 
 整個 workspace 的統一入口：所有本機服務（交易工具、開發中專案的 dev server、排程任務）集中成卡片，
-點名稱就開頁面（需要 token 的會自動從檔案帶入），不必記 localhost 端口。設定全在 `services.json`，
+點名稱就開頁面（需要 token 的會自動從檔案帶入），不必記 localhost 端口。2026-10-07 起版面改成控制台式表格清單
+（每個群組一個區段標題，底下一列一個服務：狀態點＋字｜名稱＋說明｜等寬字的 port／上次／下次｜文字型操作），
+整頁一個深藍底＋琥珀強調色（與圖示同色），沒有卡片框、圓角方塊或陰影；README 文中「卡片」指的是 `services.json` 的項目型態。設定全在 `services.json`，
 加服務＝加一段 JSON，不用重編譯。
 
 2026-10-07 起 agent-harness 控制台已過期、群組封存；Hub 不再於啟動時自動拉起 4317/4320。
@@ -25,10 +27,23 @@ cd E:\Kyle\Workspace\agent-harness
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build-agent-desktop.ps1 -InstallShortcuts
 ```
 
-腳本在 `.tmp/hub-desktop-target` 建 release，交付至 `runtime/desktop/<日期時間>/agent-hub.exe`，並寫入
-exe/來源雜湊、`appName` 與路徑的 `delivery.json`；捷徑裝到桌面與開始功能表，名稱＝`appName`。
-腳本不停止任何程式；更新時若舊程式仍在跑，single-instance 會使新捷徑回到舊實例，需先從系統匣退出
-舊桌面實例（只退出 Hub 自己的程序，不按名稱批次殺）再開新版。
+腳本在 `.tmp/hub-desktop-target` 建 release，交付到**固定路徑** `runtime/desktop/current/agent-hub.exe`
+（桌面／開始功能表／已釘選的工作列捷徑都指它），同時留一份版本副本 `runtime/desktop/<日期時間>/agent-hub.exe`
+＋ `delivery.json`（exe/來源雜湊、`appName`、AppUserModelID、路徑；`current/` 也放一份）。捷徑名稱＝`appName`。
+覆蓋 current 前，腳本只退出「正在從 current 路徑執行」的 Hub 程序（精確比對 exe 路徑，不按名稱批次殺）；
+從別的路徑（例如舊的日期目錄）跑著的實例不碰，要自己從系統匣退出，否則 single-instance 會把新捷徑導回舊實例。
+建完請從 current 路徑啟動。腳本檔本身存成 UTF-8 **含 BOM**（Windows PowerShell 5.1 讀無 BOM 檔會當 CP950，
+中文註解會吞掉後面的引號）。
+
+### 工作列只出現一個圖示（AppUserModelID）
+
+Windows 以 AppUserModelID（沒有就用 exe 路徑）決定「釘選的捷徑」和「執行中的視窗」要不要合併成同一個工作列按鈕。
+2026-10-07 之前每次交付換一個日期路徑，釘選的捷徑指舊 exe，點開後工作列就多出第二個圖示。現在三處同一個 ID
+`tw.kyle.agenthub`：`tauri.conf.json` 的 `identifier`、`src-tauri/src/main.rs` 在建視窗前呼叫
+`SetCurrentProcessExplicitAppUserModelID`（Tauri 2.11 自己不會設）、build 腳本把它寫進每個 .lnk 的
+`System.AppUserModel.ID`（IShellLinkW＋IPropertyStore，WScript.Shell 寫不到；驗證走 Shell.Application
+`ExtendedProperty`）。腳本若在 `%APPDATA%\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\` 找到同名
+捷徑，也只改它的目標／圖示／ID 指向 current（不碰登錄、不必重釘）。腳本會檢查三處 ID 一致，改 ID 要三處一起改。
 
 圖示：`hub/scripts/make_icon.py`（Pillow，用 runtime venv 跑）產生 `src-tauri/icons/` 全部尺寸（含多尺寸 icon.ico），
 改圖示＝改腳本→重跑→重建。**只保留 `appName` 命名的捷徑**：舊的「Agent Harness」「Agent Hub」捷徑已刪
@@ -45,7 +60,7 @@ exe/來源雜湊、`appName` 與路徑的 `delivery.json`；捷徑裝到桌面�
 UI（`ui/`）是**打包進 binary** 的（`tauri.conf.json` 的 `frontendDist: "../ui"`），但 `services.json`
 是**執行時從磁碟讀**的。只改檔沒重建 release 時會出現「新設定 × 舊 UI」的錯配，錯誤訊息通常指不到真正原因
 （2026-07-30 實例：新欄位讓舊 UI 整頁卡在「設定載入失敗: invalid args」）。
-**驗收 release 真的換掉了**：比對 exe 的 LastWriteTime 與你改動的時間，不要只看「cargo 說 Finished」。
+**驗收 release 真的換掉了**：比對 `runtime/desktop/current/agent-hub.exe` 的 LastWriteTime 與你改動的時間，不要只看「cargo 說 Finished」。
 
 ## services.json 欄位
 

@@ -1,4 +1,4 @@
-// Workspace Hub 儀表板：services.json 驅動的卡片（一般服務／狀態卡／資訊卡／封存卡）＋個人待辦。
+// Workspace Hub 儀表板：services.json 驅動的表格化清單（一般服務／狀態列／資訊列／封存列）＋個人待辦。
 // 樣板（{file:}/{date:}）一律在 Rust 端展開，前端看不到 token 內容。
 // 群組可收合（狀態存 localStorage）；封存／取消封存由 Rust 端改寫 services.json（只切 archived）。
 (() => {
@@ -45,10 +45,11 @@
   }
   const findService = id => liveServices().find(s => s.id === id);
 
-  // ---------- 卡片渲染 ----------
+  // ---------- 列渲染（表格化清單：狀態｜名稱＋說明｜等寬 meta｜文字操作） ----------
   const RESULT_LABEL = { success: "成功", running: "執行中", never: "尚未執行", failure: "失敗" };
+  const STATE_LABEL = { up: "運行中", down: "停止", bad: "異常", pending: "處理中", unknown: "未知", archived: "封存", info: "" };
 
-  /// 封存／取消封存按鈕，或（確認中）同位置的 inline 確認列。群組已封存時服務卡不給個別按鈕（由群組層級處理）。
+  /// 封存／取消封存文字操作，或（確認中）同位置的 inline 確認列。群組已封存時服務列不給個別操作（由群組層級處理）。
   function archiveControl(g, s) {
     if (s ? g.archived : false) return "";
     const key = { group: g.name, id: s ? s.id : null };
@@ -58,25 +59,30 @@
     const attr = `data-arch-group="${esc(key.group)}"${s ? ` data-arch-id="${esc(s.id)}"` : ""}`;
     if (confirming && confirming.group === key.group && confirming.id === key.id) {
       return `<span class="confirm" role="group" aria-label="確認">${toArchive ? "封存" : "取消封存"}「${esc(name)}」？
-        <button type="button" class="yes" data-confirm="yes" ${archiving ? "disabled" : ""}>${archiving ? "…" : "確定"}</button>
-        <button type="button" data-confirm="no" ${archiving ? "disabled" : ""}>取消</button></span>`;
+        <button type="button" class="txt yes" data-confirm="yes" ${archiving ? "disabled" : ""}>${archiving ? "…" : "確定"}</button>
+        <button type="button" class="txt quiet" data-confirm="no" ${archiving ? "disabled" : ""}>取消</button></span>`;
     }
-    return `<button type="button" class="arch" ${attr} data-arch-to="${toArchive ? "1" : "0"}" ${archiving ? "disabled" : ""} title="${toArchive ? "封存（改寫 services.json）" : "取消封存"}">${label}</button>`;
+    return `<button type="button" class="txt quiet" ${attr} data-arch-to="${toArchive ? "1" : "0"}" ${archiving ? "disabled" : ""} title="${toArchive ? "封存（改寫 services.json）" : "取消封存"}">${label}</button>`;
   }
+
+  /// 狀態欄：燈點＋字（不只靠顏色）
+  const stateCell = (k, label) => `<div class="state ${k}${label ? "" : " none"}"><span class="dot"></span>${label ? `<span>${esc(label)}</span>` : ""}</div>`;
+  const port = s => { try { const p = new URL(s.healthUrl || "").port; return p ? `<span class="k">port</span>${esc(p)}` : ""; } catch { return ""; } };
+  const row = (cls, state, main, meta, acts) =>
+    `<div class="row ${cls}">${state}<div class="main">${main}</div><div class="meta">${meta}</div><div class="acts">${acts}</div></div>`;
+  const mainCell = (s, nameHtml) => `${nameHtml}<div class="ds" title="${esc(s.desc ?? "")}">${esc(s.desc ?? "")}</div>`;
 
   function renderArchived(g, s) {
-    return `<div class="card archived"><div class="dot none"></div><div class="meta">
-      <div class="nm">${esc(s.name)}</div><div class="ds">${esc(s.desc ?? "")}</div></div>${archiveControl(g, s)}</div>`;
+    return row("archived", stateCell("archived", "封存"), mainCell(s, `<div class="nm">${esc(s.name)}</div>`), "", archiveControl(g, s));
   }
   function renderInfo(g, s) {
-    return `<div class="card info"><div class="dot none"></div><div class="meta">
-      <div class="nm">${esc(s.name)}</div><div class="ds">${esc(s.desc ?? "")}</div>
-      ${s.note ? `<div class="lastline">${esc(s.note)}</div>` : ""}</div>${archiveControl(g, s)}</div>`;
+    return row("info", stateCell("info", ""), mainCell(s, `<div class="nm">${esc(s.name)}</div>`),
+      s.note ? `<span class="note" title="${esc(s.note)}">${esc(s.note)}</span>` : "", archiveControl(g, s));
   }
 
-  /// 狀態卡的燈號與文字：排程（taskName）、動作結果（resultFile）、看門狗（alertFile+logFile）可疊加
+  /// 狀態列的燈號與文字：排程（taskName）、動作結果（resultFile）、看門狗（alertFile+logFile）可疊加
   function statusView(s, info) {
-    if (!info) return { dot: "", lines: ["讀取中…"], alert: "", note: "", last: "" };
+    if (!info) return { dot: "", lines: [`<span class="note">讀取中…</span>`], alert: "", note: "", last: "" };
     const lines = [];
     let dot = "", alert = "", note = "";
     const sched = info.sched;
@@ -84,7 +90,9 @@
       if (sched.error) { alert = `排程讀取失敗：${sched.error}`; dot = "bad"; }
       else {
         const kind = sched.lastResultKind;
-        lines.push(`上次：${sched.lastRun || "—"}（${RESULT_LABEL[kind] || sched.lastResult}）．下次：${sched.nextRun || "—"}`);
+        const result = RESULT_LABEL[kind] || sched.lastResult;
+        lines.push(`<span class="k">上次</span>${esc(sched.lastRun || "—")} <span class="r-${esc(kind)}">${esc(result)}</span>`);
+        lines.push(`<span class="k">下次</span>${esc(sched.nextRun || "—")}`);
         dot = kind === "failure" ? "bad" : kind === "never" ? "" : "up";
         if (kind === "failure") alert = `上次結果碼 ${sched.lastResult}`;
       }
@@ -92,13 +100,13 @@
     const file = info.file;
     if (file) {
       if (file.status) {                       // action_status（resultFile）
-        lines.push(`${file.checkedAt ? `上次掃描：${file.checkedAt}` : "尚無掃描紀錄"}．結果：${RESULT_LABEL[file.status] || "未知"}`);
+        lines.push(`<span class="k">掃描</span>${esc(file.checkedAt || "尚無紀錄")} <span class="r-${esc(file.status)}">${esc(RESULT_LABEL[file.status] || "未知")}</span>`);
         if (file.status === "failure") { alert = alert || file.message || "執行失敗"; dot = "bad"; }
         else if (file.status === "success") { note = file.message || ""; dot = dot || "up"; }
       } else {                                 // watchdog_status（alertFile/logFile）
         if (file.alert) { alert = file.alert; dot = "bad"; }
-        if (file.lastRun) { lines.push(`最近檢查：${file.lastRun}`); dot = dot || "up"; }
-        else if (!sched && !file.lastLine) lines.push("尚無巡檢紀錄");
+        if (file.lastRun) { lines.push(`<span class="k">最近</span>${esc(file.lastRun)}`); dot = dot || "up"; }
+        else if (!sched && !file.lastLine) lines.push(`<span class="note">尚無巡檢紀錄</span>`);
       }
     }
     return { dot, lines, alert, note, last: file?.lastLine || "" };
@@ -106,28 +114,26 @@
 
   function renderStatus(g, s) {
     const v = statusView(s, statusInfo[s.id]);
-    return `<div class="card"><div class="dot ${v.dot}"></div><div class="meta">
-      <div class="nm">${esc(s.name)}</div>
-      <div class="ds">${esc(s.desc ?? "")}</div>
-      ${v.lines.map(l => `<div class="sched">${esc(l)}</div>`).join("")}
+    const k = v.dot === "up" ? "up" : v.dot === "bad" ? "bad" : "unknown";
+    const main = `<div class="nm">${esc(s.name)}</div><div class="ds" title="${esc(s.desc ?? "")}">${esc(s.desc ?? "")}</div>
       ${v.alert ? `<div class="alert">${esc(v.alert)}</div>` : ""}
       ${v.note ? `<div class="oknote">${esc(v.note)}</div>` : ""}
-      ${v.last ? `<div class="lastline" title="log 最後一行">${esc(v.last)}</div>` : ""}
-    </div>${archiveControl(g, s)}</div>`;
+      ${v.last ? `<div class="lastline" title="log 最後一行：${esc(v.last)}">${esc(v.last)}</div>` : ""}`;
+    return row("status", stateCell(k, STATE_LABEL[k]), main, v.lines.join("<br>"), archiveControl(g, s));
   }
 
   function renderService(g, s) {
     const up = health[s.id], pending = busy.has(s.id);
     const downAlert = !pending && !up && s.downAlert;
-    return `<div class="card"><div class="dot ${pending ? "pending" : up ? "up" : downAlert ? "bad" : ""}"></div>
-      <div class="meta">
-        ${s.open ? `<button type="button" class="nm" data-open="${esc(s.id)}">${esc(s.name)} ↗</button>` : `<div class="nm">${esc(s.name)}</div>`}
-        <div class="ds">${esc(s.desc ?? "")}</div>
-        ${downAlert ? `<div class="alert">${esc(s.downAlert)}</div>` : ""}
-      </div>
-      <button data-act="${esc(s.id)}" class="${up ? "stop" : ""}" ${pending ? "disabled" : ""}>${pending ? "…" : up ? "停止" : "啟動"}</button>
-      ${archiveControl(g, s)}
-    </div>`;
+    const k = pending ? "pending" : up ? "up" : downAlert ? "bad" : "down";
+    const name = s.open
+      ? `<button type="button" class="nm" data-open="${esc(s.id)}" title="開啟頁面">${esc(s.name)}<span class="ext">↗</span></button>`
+      : `<div class="nm">${esc(s.name)}</div>`;
+    const main = `${mainCell(s, name)}${downAlert ? `<div class="alert">${esc(s.downAlert)}</div>` : ""}`;
+    const acts = `<button type="button" data-act="${esc(s.id)}" class="txt ${up ? "stop" : ""}" ${pending ? "disabled" : ""}>${pending ? "…" : up ? "停止" : "啟動"}</button>
+      ${s.open ? `<button type="button" class="txt" data-open="${esc(s.id)}">開啟</button>` : ""}
+      ${archiveControl(g, s)}`;
+    return row("service", stateCell(k, STATE_LABEL[k]), main, port(s), acts);
   }
 
   function renderCard(g, s) {
@@ -163,7 +169,7 @@
         ${isCollapsed ? `<span class="gsum">${groupSummary(g)}</span>` : ""}
         <span class="gactions">${archiveControl(g, null)}</span>
       </div>
-      ${isCollapsed ? "" : g.services.map(s => renderCard(g, s)).join("")}
+      ${isCollapsed ? "" : `<div class="rows">${g.services.map(s => renderCard(g, s)).join("")}</div>`}
     </section>`;
   }
 
@@ -296,10 +302,10 @@
   function renderTodos() {
     const list = $("#todoList");
     if (!todos.length) { list.innerHTML = `<div class="empty">尚無待辦</div>`; return; }
-    list.innerHTML = todos.map(t => `<div class="card todo ${t.done ? "done" : ""}" data-id="${esc(t.id)}">
+    list.innerHTML = todos.map(t => `<div class="todo ${t.done ? "done" : ""}" data-id="${esc(t.id)}">
       <input type="checkbox" ${t.done ? "checked" : ""} ${todosSaving ? "disabled" : ""} aria-label="完成">
       <div class="todo-text"></div>
-      <button class="del" type="button" aria-label="刪除" ${todosSaving ? "disabled" : ""}>×</button></div>`).join("");
+      <button class="txt del" type="button" aria-label="刪除" ${todosSaving ? "disabled" : ""}>刪除</button></div>`).join("");
     list.querySelectorAll(".todo").forEach(row => {
       const item = todos.find(t => t.id === row.dataset.id);
       row.querySelector(".todo-text").textContent = item.text;
