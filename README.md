@@ -30,6 +30,11 @@ exe/來源雜湊、`appName` 與路徑的 `delivery.json`；捷徑裝到桌面�
 腳本不停止任何程式；更新時若舊程式仍在跑，single-instance 會使新捷徑回到舊實例，需先從系統匣退出
 舊桌面實例（只退出 Hub 自己的程序，不按名稱批次殺）再開新版。
 
+圖示：`hub/scripts/make_icon.py`（Pillow，用 runtime venv 跑）產生 `src-tauri/icons/` 全部尺寸（含多尺寸 icon.ico），
+改圖示＝改腳本→重跑→重建。**只保留 `appName` 命名的捷徑**：舊的「Agent Harness」「Agent Hub」捷徑已刪
+（2026-10-07 實例：桌面與工作列的「Agent Hub」捷徑指向 `src-tauri/target/release/agent-hub.exe` 的 7 月舊版，
+點到它就讓 single-instance 把新捷徑導回舊 Agent Hub）；`target/release` 只是 cargo 產物，不要對它建捷徑或釘選。
+
 建置需要 Rust MSVC 與 Visual Studio C++ 工具組；單元測試 `cargo test --manifest-path hub\src-tauri\Cargo.toml`
 （含真的呼叫一次 schtasks 的編碼測試）。Tauri 使用系統 WebView2；要製作跨機安裝包還需另處理各專案依賴與
 資料路徑，不能把目前 exe 當成完整安裝程式。[官方前置需求](https://v2.tauri.app/start/prerequisites/)、
