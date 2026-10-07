@@ -1,5 +1,6 @@
 // Workspace Hub：整個 workspace 的統一入口（設定驅動，見 ../../services.json；名稱由 appName 決定）
 // 關主視窗縮到系統匣；退出桌面程式保留背景服務。
+mod archive;
 mod schtasks;
 mod template;
 use std::collections::HashMap;
@@ -67,6 +68,21 @@ async fn save_todos(todos: serde_json::Value) -> Result<(), String> {
     }
     let text = serde_json::to_string_pretty(&todos).map_err(|e| format!("todos 序列化失敗: {e}"))?;
     std::fs::write(TODOS_PATH, text).map_err(|e| format!("{TODOS_PATH}: {e}"))
+}
+
+/// 封存／取消封存一個群組（`id` 為 None）或服務：純文字改 services.json 只切 `archived`，
+/// 寫前先存 services.json.bak。回傳改後的完整設定讓前端即時更新。
+#[tauri::command]
+async fn set_archived(group: String, id: Option<String>, archived: bool) -> Result<serde_json::Value, String> {
+    let path = services_path();
+    let text = fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))?;
+    let next = archive::set_archived(&text, &group, id.as_deref(), archived)?;
+    if next != text {
+        let bak = format!("{path}.bak");
+        fs::write(&bak, &text).map_err(|e| format!("寫備份 {bak} 失敗，未改動: {e}"))?;
+        fs::write(&path, &next).map_err(|e| format!("{path}: {e}"))?;
+    }
+    serde_json::from_str(&next).map_err(|e| format!("services.json 解析失敗: {e}"))
 }
 
 /// 健康檢查：打真實 API 路由拿 2xx 才算活（端口有回應 ≠ 服務健康）。
@@ -409,6 +425,7 @@ pub fn run() {
             load_config,
             load_todos,
             save_todos,
+            set_archived,
             probe,
             scheduled_task_status,
             watchdog_status,

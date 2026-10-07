@@ -12,6 +12,22 @@ h1{font-size:16px;color:var(--acc);letter-spacing:1px}
 .gname{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:2px;
        border-bottom:1px solid var(--border);padding-bottom:5px;margin-bottom:8px;font-weight:600}
 .group{margin-bottom:18px}
+.ghead{display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border);padding-bottom:5px;margin-bottom:8px}
+.ghead .gname{border:0;padding:0;margin:0}
+.gtoggle{display:flex;align-items:center;gap:6px;background:none;border:0;padding:2px 4px 2px 0;cursor:pointer;color:var(--dim);font:inherit}
+.gtoggle:hover .gname,.gtoggle:hover .caret{color:var(--acc)}
+.caret{width:12px;font-size:12px;color:var(--dim);display:inline-block;text-align:center}
+.gsum{font-size:11.5px;color:var(--dim);letter-spacing:.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gsum .sep{opacity:.6;margin:0 2px}
+.gsum .s-up{color:var(--ok)}.gsum .s-bad{color:var(--bad)}.gsum .s-pending{color:var(--warn)}
+.gactions{margin-left:auto;display:flex;align-items:center;gap:8px}
+.group.collapsed .ghead{margin-bottom:0}
+button.arch{font-size:11.5px;padding:4px 10px;color:var(--dim);border-color:transparent}
+button.arch:hover{color:var(--acc);border-color:var(--acc)}
+.confirm{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--warn);white-space:nowrap;flex:none}
+.confirm button{padding:4px 10px;font-size:12px}
+.confirm button.yes{border-color:var(--warn);color:var(--warn)}
+.confirm button.yes:hover{background:var(--warn);color:#1a1200}
 .group.archived .gname::after,.card.archived .nm::after{content:"封存";font-size:10px;letter-spacing:1px;margin-left:8px;
        padding:1px 6px;border:1px solid var(--border);border-radius:6px;color:var(--dim)}
 .card{background:var(--panel);border:1px solid var(--border);border-radius:10px;

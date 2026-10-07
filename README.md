@@ -36,7 +36,7 @@ exe/來源雜湊、`appName` 與路徑的 `delivery.json`；捷徑裝到桌面�
 點到它就讓 single-instance 把新捷徑導回舊 Agent Hub）；`target/release` 只是 cargo 產物，不要對它建捷徑或釘選。
 
 建置需要 Rust MSVC 與 Visual Studio C++ 工具組；單元測試 `cargo test --manifest-path hub\src-tauri\Cargo.toml`
-（含真的呼叫一次 schtasks 的編碼測試）。Tauri 使用系統 WebView2；要製作跨機安裝包還需另處理各專案依賴與
+（含真的呼叫一次 schtasks 的編碼測試，以及 archive.rs 對真實 `services.json` 的封存往返測試）。Tauri 使用系統 WebView2；要製作跨機安裝包還需另處理各專案依賴與
 資料路徑，不能把目前 exe 當成完整安裝程式。[官方前置需求](https://v2.tauri.app/start/prerequisites/)、
 [Windows 封裝文件](https://v2.tauri.app/distribute/windows-installer/)。
 
@@ -75,6 +75,19 @@ UI（`ui/`）是**打包進 binary** 的（`tauri.conf.json` 的 `frontendDist: 
 
 群組或服務加 `"archived": true`：預設隱藏，右上「顯示封存」切換後只顯示名稱與說明——不探健康、無啟停、
 不開連結、不跑 `runOnHubStart`。agent-harness 群組（控制台、看門狗）2026-10-07 起封存。
+
+也可以在 UI 直接切：每張卡右側「封存」／封存卡的「取消封存」，群組標題列右側「封存群組」／「取消封存」。
+按下去會出現同位置的 inline 確認列（不用 window.confirm，那會卡住 WebView），確定後由 Rust 端
+（`src-tauri/src/archive.rs`）以**純文字方式**改寫 `services.json`：只動目標的 `archived` 成員（封存＝插在
+`name` 之後或就地改 `true`；取消封存＝把該成員連逗號移除），縮排、單行物件、`_readme`、鍵順序與行尾全部原樣，
+寫入前先存 `services.json.bak`（只保留最近一次）。群組已封存時服務卡不給個別按鈕，由群組層級處理。
+`services.json` 仍可手改：改完按「重新整理」會重新從磁碟讀（或重開 Hub）。
+
+### 群組收合
+
+點群組標題列（箭頭／名稱）收合或展開；收合時標題列右側顯示該群組的健康摘要（例如「3 運行中・1 停止・1 異常」，
+資訊卡不計）。收合狀態存在 WebView2 的 `localStorage`（鍵 `hub.collapsedGroups`，以群組名稱記），重開 Hub 仍保留；
+群組改名＝視為新群組（預設展開）。
 
 ### 字串樣板
 
