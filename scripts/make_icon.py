@@ -4,8 +4,8 @@ r"""產生 Workspace Hub 的應用程式圖示（Tauri 所需全部尺寸）。
 無文字、無漸層；小尺寸（16/32px）靠粗間距與單一亮色仍可辨識。
 
 用法（repo 根或任何目錄皆可）：
-    E:\Kyle\Workspace\agent-harness\runtime\.venv\Scripts\python.exe hub\scripts\make_icon.py [--out <dir>]
-預設輸出到 hub/src-tauri/icons/（覆蓋），改完要重跑 scripts/build-agent-desktop.ps1。
+    E:\Kyle\Workspace\agent-harness\runtime\.venv\Scripts\python.exe scripts\make_icon.py [--out <dir>]
+預設輸出到 src-tauri/icons/（覆蓋），改完要重跑 scripts/build-agent-desktop.ps1。
 """
 from __future__ import annotations
 

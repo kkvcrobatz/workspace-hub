@@ -17,8 +17,8 @@ use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder};
 
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-const SERVICES_PATH: &str = r"E:\Kyle\Workspace\agent-harness\hub\services.json";
-const TODOS_PATH: &str = r"E:\Kyle\Workspace\agent-harness\hub\data\todos.json";
+const SERVICES_PATH: &str = r"E:\Kyle\Workspace\workspace-hub\services.json";
+const TODOS_PATH: &str = r"E:\Kyle\Workspace\workspace-hub\data\todos.json";
 const DEFAULT_APP_NAME: &str = "Workspace Hub";
 
 fn services_path() -> String {
@@ -293,7 +293,7 @@ fn run_startup_actions() {
 
 fn run_startup_action(id: &str, action: &serde_json::Map<String, serde_json::Value>) {
     let command = action.get("command").and_then(|v| v.as_str()).unwrap_or("");
-    let cwd = action.get("cwd").and_then(|v| v.as_str()).unwrap_or(r"E:\Kyle\Workspace\agent-harness");
+    let cwd = action.get("cwd").and_then(|v| v.as_str()).unwrap_or(r"E:\Kyle\Workspace\workspace-hub");
     let state_file = action.get("stateFile").and_then(|v| v.as_str()).unwrap_or("");
     let result_file = action.get("resultFile").and_then(|v| v.as_str()).unwrap_or("");
     if command.is_empty() || state_file.is_empty() || result_file.is_empty() {
