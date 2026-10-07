@@ -93,6 +93,7 @@
         {
           "id": "geyser",
           "name": "geyser",
+          "archived": true,
           "desc": "素材噴水池：Phase 0 Telegram bot 收件匣（npm run bot），沒有 HTTP 端點",
           "kind": "info",
           "note": "設計全文 geyser\\design.md；bot 需 GEYSER_TG_TOKEN，不由 Hub 啟動"
