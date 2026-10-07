@@ -6,7 +6,7 @@ Config-driven desktop launcher for local services and dev projects (Tauri 2, Win
 
 ## What it is
 
-- **一個 JSON 管一切**：`services.json` 決定群組、服務、健康探測、啟停命令、開啟連結。加服務＝加一段 JSON，不用重編譯。
+- **一個 JSON 管一切**：`services.json`（本機檔，gitignored；從 `services.example.json` 複製後改成你的路徑） 決定群組、服務、健康探測、啟停命令、開啟連結。加服務＝加一段 JSON，不用重編譯。
 - **四種列型態**：一般服務（探 `healthUrl`、啟／停、開頁面）、`status`（Windows 工作排程器任務的上次／下次執行＋log 尾行）、
   `info`（純說明，可帶外部連結）、封存（隱藏、不探、不啟停；可在 UI 直接切）。
 - **Token 不進前端**：`open` / `healthUrl` 的 `{file:<路徑>}` 樣板在 Rust 端讀檔展開，WebView 看不到 token 內容。

@@ -10,7 +10,7 @@
           "name": "策略總帳",
           "desc": "所有策略的來源、假說、結果與淘汰原因（claude.ai artifact，用系統瀏覽器開）",
           "kind": "info",
-          "open": "https://claude.ai/artifact/6NCUhc5zT5tVLudXh24Gjb",
+          "open": "https://example.com/your-page",
           "external": true
         },
         {
@@ -18,7 +18,7 @@
           "name": "教學：Wyckoff",
           "desc": "威科夫方法（累積／派發、彈簧、SOS）教學 artifact",
           "kind": "info",
-          "open": "https://claude.ai/artifact/4S4537nNmUpKouVxeYoQUg",
+          "open": "https://example.com/your-page",
           "external": true
         },
         {
@@ -26,7 +26,7 @@
           "name": "教學：訂單流",
           "desc": "Delta／CVD／footprint／吸收與失衡教學 artifact",
           "kind": "info",
-          "open": "https://claude.ai/artifact/H1M1LFNyNC1F5CAg9icWz8",
+          "open": "https://example.com/your-page",
           "external": true
         },
         {
@@ -34,7 +34,7 @@
           "name": "教學：波浪與費波",
           "desc": "艾略特波浪、費波那契比例教學 artifact",
           "kind": "info",
-          "open": "https://claude.ai/artifact/WdX78oc4XwfANp2iS5Q7ap",
+          "open": "https://example.com/your-page",
           "external": true
         },
         {
@@ -42,7 +42,7 @@
           "name": "教學：型態學",
           "desc": "經典價格型態（含通道擠壓）教學 artifact",
           "kind": "info",
-          "open": "https://claude.ai/artifact/5oAuAL69JPxMXJ9D5JaLeA",
+          "open": "https://example.com/your-page",
           "external": true
         },
         {

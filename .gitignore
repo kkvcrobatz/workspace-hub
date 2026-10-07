@@ -20,3 +20,6 @@ exports/
 # Python（scripts/make_icon.py）
 __pycache__/
 *.pyc
+
+# 本機設定（含本機路徑與私人連結）；範本見 services.example.json
+services.json
